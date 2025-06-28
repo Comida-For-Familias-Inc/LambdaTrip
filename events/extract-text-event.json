@@ -1,0 +1,10 @@
+{
+  "httpMethod": "POST",
+  "path": "/extract-text",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "image_url": "https://example.com/document-image.jpg"
+  }
+} 

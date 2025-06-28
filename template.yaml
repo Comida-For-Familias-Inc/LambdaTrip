@@ -12,6 +12,7 @@ Globals:
         S3_BUCKET: !Ref LandmarkAnalysisBucket
         GOOGLE_VISION_API_KEY: !Ref GoogleVisionApiKey
         GOOGLE_WEATHER_API_KEY: !Ref GoogleWeatherApiKey
+        ENVIRONMENT: local
 
 Parameters:
   GoogleVisionApiKey:
@@ -86,8 +87,8 @@ Resources:
   ImageProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/image_processor/
-      Handler: app.lambda_handler
+      CodeUri: src/
+      Handler: image_processor/app.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Environment:
         Variables:
@@ -99,15 +100,16 @@ Resources:
             Path: /analyze-image
             Method: post
       Tags:
-        - Key: Function
-          Value: ImageProcessor
+        Function: ImageProcessor
+        Project: LambdaTrip
+        Environment: Production
 
   # Landmark Analyzer Lambda Function
   LandmarkAnalyzerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/landmark_analyzer/
-      Handler: app.lambda_handler
+      CodeUri: src/
+      Handler: landmark_analyzer/app.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Events:
         ApiEvent:
@@ -116,8 +118,9 @@ Resources:
             Path: /analyze-landmark
             Method: post
       Tags:
-        - Key: Function
-          Value: LandmarkAnalyzer
+        Function: LandmarkAnalyzer
+        Project: LambdaTrip
+        Environment: Production
 
   # API Gateway
   ApiGateway:

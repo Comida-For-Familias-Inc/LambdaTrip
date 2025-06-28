@@ -126,6 +126,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.json
 .venv
 env/
 venv/
@@ -196,3 +197,6 @@ extracted_text_*.txt
 *.log
 logs/
 sample-itinerary.pdf
+
+# AWS SAM build artifacts
+.aws-sam/

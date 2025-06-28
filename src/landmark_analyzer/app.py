@@ -77,14 +77,19 @@ def lambda_handler(event, context):
         
         # Step 4: Store final result in S3
         final_result_key = f"landmark_analysis/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_final.json"
-        s3.put_object(
-            Bucket=s3_bucket,
-            Key=final_result_key,
-            Body=json.dumps(final_result, indent=2),
-            ContentType='application/json'
-        )
         
-        logger.info(f"Final analysis stored at s3://{s3_bucket}/{final_result_key}")
+        # Skip S3 operations in local/development environment
+        environment = os.getenv('ENVIRONMENT')
+        if environment == 'local':
+            logger.info(f"Environment: {environment} - skipping S3 upload. Would store at: s3://{s3_bucket}/{final_result_key}")
+        else:
+            s3.put_object(
+                Bucket=s3_bucket,
+                Key=final_result_key,
+                Body=json.dumps(final_result, indent=2),
+                ContentType='application/json'
+            )
+            logger.info(f"Final analysis stored at s3://{s3_bucket}/{final_result_key}")
         
         return {
             "statusCode": 200,
@@ -115,8 +120,12 @@ def analyze_with_bedrock(analysis_data):
         # Prepare the prompt for Bedrock
         prompt = create_analysis_prompt(analysis_data)
         
-        # Use Claude 3 Sonnet for analysis
-        model_id = "anthropic.claude-3-sonnet-20240229-v1:0"
+        # Use Claude 3 Haiku for analysis (more commonly available)
+        model_id = "anthropic.claude-3-haiku-20240307-v1:0"
+        
+        # Alternative models if the above doesn't work:
+        # model_id = "anthropic.claude-instant-v1"
+        # model_id = "amazon.titan-text-express-v1"
         
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
