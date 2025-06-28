@@ -120,8 +120,8 @@ def analyze_with_bedrock(analysis_data):
         # Prepare the prompt for Bedrock
         prompt = create_analysis_prompt(analysis_data)
         
-        # Use Claude 3 Haiku for analysis (more commonly available)
-        model_id = "anthropic.claude-3-haiku-20240307-v1:0"
+        # Use model from environment variable
+        model_id = os.getenv('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0')
         
         # Alternative models if the above doesn't work:
         # model_id = "anthropic.claude-instant-v1"

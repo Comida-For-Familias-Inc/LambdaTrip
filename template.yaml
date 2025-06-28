@@ -13,6 +13,7 @@ Globals:
         GOOGLE_VISION_API_KEY: !Ref GoogleVisionApiKey
         GOOGLE_WEATHER_API_KEY: !Ref GoogleWeatherApiKey
         ENVIRONMENT: local
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
 
 Parameters:
   GoogleVisionApiKey:
@@ -24,6 +25,11 @@ Parameters:
     Type: String
     Description: Google Weather API Key for weather data
     NoEcho: true
+  
+  BedrockModelId:
+    Type: String
+    Description: Bedrock model ID for AI analysis
+    Default: "anthropic.claude-3-haiku-20240307-v1:0"
 
 Resources:
   # S3 Bucket for storing analysis results
