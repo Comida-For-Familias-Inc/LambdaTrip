@@ -22,6 +22,9 @@ def lambda_handler(event, context):
     Lambda function to process landmark images using Google Vision API
     """
     try:
+        # Debug: Print environment variables
+        logger.info(f"Environment variables: ENVIRONMENT={os.getenv('ENVIRONMENT')}, S3_BUCKET={os.getenv('S3_BUCKET')}")
+        
         # Initialize S3 client
         s3 = boto3.client('s3')
         
@@ -90,14 +93,19 @@ def lambda_handler(event, context):
         
         # Step 6: Store intermediate result in S3
         result_key = f"landmark_analysis/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_analysis.json"
-        s3.put_object(
-            Bucket=s3_bucket,
-            Key=result_key,
-            Body=json.dumps(analysis_data, indent=2),
-            ContentType='application/json'
-        )
         
-        logger.info(f"Analysis data stored at s3://{s3_bucket}/{result_key}")
+        # Skip S3 operations in local/development environment
+        environment = os.getenv('ENVIRONMENT')
+        if environment == 'local':
+            logger.info(f"Environment: {environment} - skipping S3 upload. Would store at: s3://{s3_bucket}/{result_key}")
+        else:
+            s3.put_object(
+                Bucket=s3_bucket,
+                Key=result_key,
+                Body=json.dumps(analysis_data, indent=2),
+                ContentType='application/json'
+            )
+            logger.info(f"Analysis data stored at s3://{s3_bucket}/{result_key}")
         
         return {
             "statusCode": 200,

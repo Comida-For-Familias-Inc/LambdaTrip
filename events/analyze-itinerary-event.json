@@ -1,0 +1,22 @@
+{
+  "httpMethod": "POST",
+  "path": "/analyze-itinerary",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "itinerary_data": {
+      "destination": "Paris, France",
+      "duration": "5 days",
+      "activities": [
+        "Visit Eiffel Tower",
+        "Louvre Museum",
+        "Notre-Dame Cathedral",
+        "Champs-Élysées",
+        "Arc de Triomphe"
+      ],
+      "budget": "$2000",
+      "travel_style": "cultural"
+    }
+  }
+} 

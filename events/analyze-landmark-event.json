@@ -1,0 +1,41 @@
+{
+  "httpMethod": "POST",
+  "path": "/analyze-landmark",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "analysis_data": {
+      "landmark": {
+        "name": "Eiffel Tower",
+        "description": "Iconic iron lattice tower",
+        "confidence": 0.95,
+        "location": {
+          "city": "Paris",
+          "country": "France",
+          "lat": 48.8584,
+          "lng": 2.2945
+        }
+      },
+      "weather": {
+        "temperature": {
+          "current": 18,
+          "feels_like": 17
+        },
+        "conditions": "partly cloudy",
+        "humidity": 65
+      },
+      "country_info": {
+        "name": {"common": "France"},
+        "capital": ["Paris"],
+        "currencies": [{"name": "Euro"}],
+        "languages": {"fra": "French"}
+      },
+      "travel_advisory": {
+        "level": "Exercise normal safety precautions",
+        "summary": "France is generally safe for travel"
+      }
+    },
+    "s3_key": "landmark_analysis/20241220_143022_analysis.json"
+  }
+} 
