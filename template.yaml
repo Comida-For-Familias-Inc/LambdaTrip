@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: LambdaTrip - AI-Powered Landmark Analysis with Google Vision and Amazon Bedrock
+
+Globals:
+  Function:
+    Timeout: 60
+    MemorySize: 512
+    Runtime: python3.11
+    Environment:
+      Variables:
+        S3_BUCKET: !Ref LandmarkAnalysisBucket
+        GOOGLE_VISION_API_KEY: !Ref GoogleVisionApiKey
+        GOOGLE_WEATHER_API_KEY: !Ref GoogleWeatherApiKey
+
+Parameters:
+  GoogleVisionApiKey:
+    Type: String
+    Description: Google Vision API Key for landmark detection
+    NoEcho: true
+  
+  GoogleWeatherApiKey:
+    Type: String
+    Description: Google Weather API Key for weather data
+    NoEcho: true
+
+Resources:
+  # S3 Bucket for storing analysis results
+  LandmarkAnalysisBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "landmark-analysis-${AWS::StackName}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldAnalyses
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # IAM Role for Lambda functions
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: LambdaTripPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # S3 permissions
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${LandmarkAnalysisBucket}/*"
+              
+              # Bedrock permissions
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: "*"
+              
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  # Image Processor Lambda Function
+  ImageProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/image_processor/
+      Handler: app.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          GOOGLE_VISION_API_KEY: !Ref GoogleVisionApiKey
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /analyze-image
+            Method: post
+      Tags:
+        - Key: Function
+          Value: ImageProcessor
+
+  # Landmark Analyzer Lambda Function
+  LandmarkAnalyzerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/landmark_analyzer/
+      Handler: app.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /analyze-landmark
+            Method: post
+      Tags:
+        - Key: Function
+          Value: LandmarkAnalyzer
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiEndpoint"
+  
+  S3BucketName:
+    Description: S3 bucket for storing analysis results
+    Value: !Ref LandmarkAnalysisBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-S3Bucket"
+  
+  ImageProcessorFunction:
+    Description: Image Processor Lambda Function ARN
+    Value: !GetAtt ImageProcessorFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ImageProcessorFunction"
+  
+  LandmarkAnalyzerFunction:
+    Description: Landmark Analyzer Lambda Function ARN
+    Value: !GetAtt LandmarkAnalyzerFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-LandmarkAnalyzerFunction" 
