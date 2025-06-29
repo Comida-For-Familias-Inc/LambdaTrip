@@ -9,12 +9,10 @@
 
 ## Features
 
-- **Right-click Landmark Analysis**: Instantly analyze any image for landmarks via the Chrome extension context menu
-- **Comprehensive Insights**: Landmark name, location, weather, country info, travel advisories, and more
-- **Modern UI**: Results appear in a beautiful, responsive sidebar modal
-- **Security**: All image URLs are handled safely to prevent XSS vulnerabilities
-- **Custom Branding**: Uses your own icon and color scheme
-- **Serverless Backend**: AWS Lambda, Google Vision API, Amazon Bedrock, and more
+- **Right-click Landmark Analysis:** Instantly analyze any image for landmarks via the Chrome extension.
+- **AI-Powered Insights:** AWS Lambda backend integrates Google Vision API for landmark detection and Amazon Bedrock for travel analysis.
+- **Comprehensive Results:** Get landmark name, location, weather, country info, travel advisories, and more—delivered directly in your browser.
+- **Serverless & Secure:** All analysis is performed in the cloud using AWS Lambda, API Gateway, and S3.
 
 ---
 
