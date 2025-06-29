@@ -29,13 +29,23 @@ def lambda_handler(event, context):
         s3 = boto3.client('s3')
         
         # Get environment variables
-        google_vision_api_key = os.environ.get('GOOGLE_VISION_API_KEY')
         s3_bucket = os.environ.get('S3_BUCKET')
         
         # Extract image URL from event
-        if 'body' in event and isinstance(event['body'], dict):
-            image_url = event['body'].get('image_url', '')
+        if 'body' in event:
+            # API Gateway sends body as a string, so we need to parse it
+            if isinstance(event['body'], str):
+                try:
+                    body_data = json.loads(event['body'])
+                    image_url = body_data.get('image_url', '')
+                except json.JSONDecodeError:
+                    logger.error("Invalid JSON in request body")
+                    raise ValueError("Invalid JSON in request body")
+            else:
+                # If body is already a dict (direct Lambda invocation)
+                image_url = event['body'].get('image_url', '')
         else:
+            # Direct Lambda invocation without API Gateway
             image_url = event.get('image_url', '')
         
         if not image_url:
@@ -44,7 +54,7 @@ def lambda_handler(event, context):
         logger.info(f"Processing image: {image_url}")
         
         # Step 1: Analyze image with Google Vision API
-        vision_result = analyze_image_with_vision(image_url, google_vision_api_key)
+        vision_result = analyze_image_with_vision(image_url, GOOGLE_VISION_API_KEY)
         
         if not vision_result or not vision_result.get('landmarks'):
             return {
@@ -109,22 +119,30 @@ def lambda_handler(event, context):
         
         return {
             "statusCode": 200,
-            "body": {
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps({
                 "landmark_detected": landmark_name,
                 "analysis_data": analysis_data,
                 "s3_key": result_key,
                 "timestamp": datetime.utcnow().isoformat()
-            }
+            })
         }
         
     except Exception as e:
         logger.error(f"Error in image processing: {str(e)}")
         return {
             "statusCode": 500,
-            "body": {
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps({
                 "error": str(e),
                 "timestamp": datetime.utcnow().isoformat()
-            }
+            })
         }
 
 def analyze_image_with_vision(image_url, api_key):

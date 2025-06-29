@@ -23,10 +23,22 @@ def lambda_handler(event, context):
         s3_bucket = os.environ.get('S3_BUCKET')
         
         # Extract analysis data from event
-        if 'body' in event and isinstance(event['body'], dict):
-            analysis_data = event['body'].get('analysis_data', {})
-            s3_key = event['body'].get('s3_key', '')
+        if 'body' in event:
+            # API Gateway sends body as a string, so we need to parse it
+            if isinstance(event['body'], str):
+                try:
+                    body_data = json.loads(event['body'])
+                    analysis_data = body_data.get('analysis_data', {})
+                    s3_key = body_data.get('s3_key', '')
+                except json.JSONDecodeError:
+                    logger.error("Invalid JSON in request body")
+                    raise ValueError("Invalid JSON in request body")
+            else:
+                # If body is already a dict (direct Lambda invocation)
+                analysis_data = event['body'].get('analysis_data', {})
+                s3_key = event['body'].get('s3_key', '')
         else:
+            # Direct Lambda invocation without API Gateway
             analysis_data = event.get('analysis_data', {})
             s3_key = event.get('s3_key', '')
         
@@ -40,19 +52,27 @@ def lambda_handler(event, context):
                 logger.error(f"Error retrieving data from S3: {str(e)}")
                 return {
                     "statusCode": 500,
-                    "body": {
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Origin": "*"
+                    },
+                    "body": json.dumps({
                         "error": f"Failed to retrieve analysis data: {str(e)}",
                         "timestamp": datetime.utcnow().isoformat()
-                    }
+                    })
                 }
         
         if not analysis_data:
             return {
                 "statusCode": 400,
-                "body": {
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "error": "No analysis data provided",
                     "timestamp": datetime.utcnow().isoformat()
-                }
+                })
             }
         
         logger.info(f"Analyzing landmark: {analysis_data.get('landmark', {}).get('name', 'Unknown')}")
@@ -93,23 +113,31 @@ def lambda_handler(event, context):
         
         return {
             "statusCode": 200,
-            "body": {
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps({
                 "landmark_name": analysis_data.get('landmark', {}).get('name', 'Unknown'),
                 "analysis": travel_analysis,
                 "recommendations": recommendations,
                 "s3_key": final_result_key,
                 "timestamp": datetime.utcnow().isoformat()
-            }
+            })
         }
         
     except Exception as e:
         logger.error(f"Error in landmark analysis: {str(e)}")
         return {
             "statusCode": 500,
-            "body": {
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps({
                 "error": str(e),
                 "timestamp": datetime.utcnow().isoformat()
-            }
+            })
         }
 
 def analyze_with_bedrock(analysis_data):

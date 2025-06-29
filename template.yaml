@@ -12,17 +12,29 @@ Globals:
         S3_BUCKET: !Ref LandmarkAnalysisBucket
         GOOGLE_VISION_API_KEY: !Ref GoogleVisionApiKey
         GOOGLE_WEATHER_API_KEY: !Ref GoogleWeatherApiKey
+        GOOGLE_GEOCODING_API_KEY: !Ref GoogleGeocodingApiKey
         ENVIRONMENT: local
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
 
 Parameters:
+  BedrockModelId:
+    Type: String
+    Description: Bedrock model ID for AI analysis
+    Default: "anthropic.claude-3-haiku-20240307-v1:0"
+  
   GoogleVisionApiKey:
     Type: String
-    Description: Google Vision API Key for landmark detection
-    NoEcho: true
+    Description: Google Vision API Key (will be stored in Secrets Manager)
+    NoEcho: true  # This hides the value in CloudFormation logs
   
   GoogleWeatherApiKey:
     Type: String
-    Description: Google Weather API Key for weather data
+    Description: Google Weather API Key (will be stored in Secrets Manager)
+    NoEcho: true
+  
+  GoogleGeocodingApiKey:
+    Type: String
+    Description: Google Geocoding API Key (will be stored in Secrets Manager)
     NoEcho: true
 
 Resources:
@@ -66,7 +78,7 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                   - s3:DeleteObject
-                Resource: !Sub "${LandmarkAnalysisBucket}/*"
+                Resource: !Sub "arn:aws:s3:::${LandmarkAnalysisBucket}/*"
               
               # Bedrock permissions
               - Effect: Allow
@@ -90,15 +102,13 @@ Resources:
       CodeUri: src/
       Handler: image_processor/app.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      Environment:
-        Variables:
-          GOOGLE_VISION_API_KEY: !Ref GoogleVisionApiKey
       Events:
         ApiEvent:
           Type: Api
           Properties:
             Path: /analyze-image
             Method: post
+            RestApiId: !Ref ApiGateway
       Tags:
         Function: ImageProcessor
         Project: LambdaTrip
@@ -117,6 +127,7 @@ Resources:
           Properties:
             Path: /analyze-landmark
             Method: post
+            RestApiId: !Ref ApiGateway
       Tags:
         Function: LandmarkAnalyzer
         Project: LambdaTrip
@@ -125,6 +136,9 @@ Resources:
   # API Gateway
   ApiGateway:
     Type: AWS::Serverless::Api
+    DependsOn:
+      - ImageProcessorFunction
+      - LandmarkAnalyzerFunction
     Properties:
       StageName: prod
       Cors:
