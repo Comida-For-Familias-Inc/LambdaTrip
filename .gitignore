@@ -197,6 +197,7 @@ extracted_text_*.txt
 *.log
 logs/
 sample-itinerary.pdf
+env.json
 
 # AWS SAM build artifacts
 .aws-sam/

@@ -24,17 +24,17 @@ Parameters:
   
   GoogleVisionApiKey:
     Type: String
-    Description: Google Vision API Key (will be stored in Secrets Manager)
+    Description: Google Vision API Key
     NoEcho: true  # This hides the value in CloudFormation logs
   
   GoogleWeatherApiKey:
     Type: String
-    Description: Google Weather API Key (will be stored in Secrets Manager)
+    Description: Google Weather API Key
     NoEcho: true
   
   GoogleGeocodingApiKey:
     Type: String
-    Description: Google Geocoding API Key (will be stored in Secrets Manager)
+    Description: Google Geocoding API Key
     NoEcho: true
 
 Resources:
