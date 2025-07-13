@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LambdaTrip - Upgrade to Premium</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 500px;
+            margin: 50px auto;
+        }
+        .plan {
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .plan:hover {
+            border-color: #3b82f6;
+        }
+        .plan.selected {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+        .price {
+            font-size: 24px;
+            font-weight: bold;
+            color: #3b82f6;
+        }
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        .btn:hover {
+            background: #2563eb;
+        }
+        .features {
+            text-align: left;
+            margin: 20px 0;
+        }
+        .features li {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Upgrade to LambdaTrip Premium</h1>
+        <p>Get unlimited landmark analysis and premium features</p>
+        
+        <div class="plan selected" onclick="selectPlan('monthly')">
+            <h3>Monthly Plan</h3>
+            <div class="price">$9.99/month</div>
+            <ul class="features">
+                <li>✅ Unlimited landmark analysis</li>
+                <li>✅ Premium AI insights</li>
+                <li>✅ Priority support</li>
+                <li>✅ Advanced travel recommendations</li>
+            </ul>
+        </div>
+        
+        <div class="plan" onclick="selectPlan('yearly')">
+            <h3>Yearly Plan</h3>
+            <div class="price">$99.99/year</div>
+            <div style="color: #059669; font-weight: bold;">Save 17%</div>
+            <ul class="features">
+                <li>✅ Unlimited landmark analysis</li>
+                <li>✅ Premium AI insights</li>
+                <li>✅ Priority support</li>
+                <li>✅ Advanced travel recommendations</li>
+                <li>✅ Early access to new features</li>
+            </ul>
+        </div>
+        
+        <button class="btn" onclick="processPayment()">Upgrade Now</button>
+        <button class="btn" onclick="window.close()" style="background: #6b7280;">Cancel</button>
+    </div>
+
+    <script>
+        let selectedPlan = 'monthly';
+        
+        function selectPlan(plan) {
+            selectedPlan = plan;
+            document.querySelectorAll('.plan').forEach(p => p.classList.remove('selected'));
+            event.currentTarget.classList.add('selected');
+        }
+        
+        function processPayment() {
+            // TODO: Integrate with Stripe or other payment processor
+            alert('Payment processing coming soon! Selected plan: ' + selectedPlan);
+            
+            // For now, just show success message
+            document.querySelector('.container').innerHTML = `
+                <h1>Thank You!</h1>
+                <p>Your payment is being processed. You'll receive a confirmation email shortly.</p>
+                <p>Your premium features will be activated within 24 hours.</p>
+                <button class="btn" onclick="window.close()">Close</button>
+            `;
+        }
+    </script>
+</body>
+</html> 
