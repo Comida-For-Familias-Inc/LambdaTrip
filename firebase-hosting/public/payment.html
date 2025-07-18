@@ -57,14 +57,23 @@
         .features li {
             margin: 8px 0;
         }
+        #google-signin {
+            margin-bottom: 20px;
+        }
     </style>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <!-- Firestore Stripe Payments SDK -->
+    <script src="https://unpkg.com/@invertase/firestore-stripe-payments@latest/dist/index.umd.js"></script>
 </head>
 <body>
     <div class="container">
         <h1>Upgrade to LambdaTrip Premium</h1>
         <p>Get unlimited landmark analysis and premium features</p>
-        
-        <div class="plan selected" onclick="selectPlan('monthly')">
+        <button id="google-signin" class="btn" style="display:none; background:#ea4335;">Sign in with Google</button>
+        <div class="plan selected" onclick="selectPlan('monthly', event)">
             <h3>Monthly Plan</h3>
             <div class="price">$9.99/month</div>
             <ul class="features">
@@ -74,8 +83,7 @@
                 <li>✅ Advanced travel recommendations</li>
             </ul>
         </div>
-        
-        <div class="plan" onclick="selectPlan('yearly')">
+        <div class="plan" onclick="selectPlan('yearly', event)">
             <h3>Yearly Plan</h3>
             <div class="price">$99.99/year</div>
             <div style="color: #059669; font-weight: bold;">Save 17%</div>
@@ -87,31 +95,82 @@
                 <li>✅ Early access to new features</li>
             </ul>
         </div>
-        
-        <button class="btn" onclick="processPayment()">Upgrade Now</button>
+        <button class="btn" id="upgrade-btn" onclick="processPayment()">Upgrade Now</button>
         <button class="btn" onclick="window.close()" style="background: #6b7280;">Cancel</button>
     </div>
-
     <script>
+        // Firebase config from your project
+        const firebaseConfig = {
+          apiKey: "AIzaSyDB2SxvMTUYNY53hhYOFqHLCD7zpoztt-Y",
+          authDomain: "lambdatrip.firebaseapp.com",
+          projectId: "lambdatrip",
+          storageBucket: "lambdatrip.appspot.com",
+          messagingSenderId: "105431370700",
+          appId: "1:105431370700:web:5c0d29fc9a6686c207ab69",
+          measurementId: "G-TB7ZWRP97W"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // Stripe Price IDs
+        const PRICE_ID_MONTHLY = "price_1RmJqYH5XBeQjH0rNJPXr83O";
+        const PRICE_ID_YEARLY = "price_1RmJtZH5XBeQjH0rTG1mI9JJ";
+
         let selectedPlan = 'monthly';
-        
-        function selectPlan(plan) {
+
+        function selectPlan(plan, event) {
             selectedPlan = plan;
             document.querySelectorAll('.plan').forEach(p => p.classList.remove('selected'));
             event.currentTarget.classList.add('selected');
         }
-        
-        function processPayment() {
-            // TODO: Integrate with Stripe or other payment processor
-            alert('Payment processing coming soon! Selected plan: ' + selectedPlan);
-            
-            // For now, just show success message
-            document.querySelector('.container').innerHTML = `
-                <h1>Thank You!</h1>
-                <p>Your payment is being processed. You'll receive a confirmation email shortly.</p>
-                <p>Your premium features will be activated within 24 hours.</p>
-                <button class="btn" onclick="window.close()">Close</button>
-            `;
+
+        // Show/hide sign-in button based on auth state
+        auth.onAuthStateChanged((user) => {
+            const signInBtn = document.getElementById('google-signin');
+            const upgradeBtn = document.getElementById('upgrade-btn');
+            if (!user) {
+                signInBtn.style.display = 'block';
+                upgradeBtn.disabled = true;
+            } else {
+                signInBtn.style.display = 'none';
+                upgradeBtn.disabled = false;
+            }
+        });
+
+        document.getElementById('google-signin').onclick = function() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider);
+        };
+
+        async function processPayment() {
+            const user = auth.currentUser;
+            if (!user) {
+                alert("Please sign in first!");
+                return;
+            }
+            const priceId = selectedPlan === 'monthly' ? PRICE_ID_MONTHLY : PRICE_ID_YEARLY;
+            // Create a new checkout session in Firestore
+            const docRef = await db.collection("customers")
+                .doc(user.uid)
+                .collection("checkout_sessions")
+                .add({
+                    price: priceId,
+                    success_url: window.location.origin,
+                    cancel_url: window.location.origin,
+                });
+            // Listen for the session URL
+            docRef.onSnapshot((snap) => {
+                const data = snap.data();
+                if (!data) return;
+                const { error, url } = data;
+                if (error) {
+                    alert(`An error occurred: ${error.message}`);
+                }
+                if (url) {
+                    window.location.assign(url);
+                }
+            });
         }
     </script>
 </body>

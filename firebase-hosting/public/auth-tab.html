@@ -52,6 +52,7 @@
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
         import { getAuth, signInWithPopup, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { getFirestore, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
         const firebaseConfig = {
             apiKey: "AIzaSyDB2SxvMTUYNY53hhYOFqHLCD7zpoztt-Y",
@@ -65,6 +66,7 @@
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth();
+        const db = getFirestore();
         const provider = new GoogleAuthProvider();
 
         // This gives you a reference to the parent frame, i.e. the offscreen document.
@@ -75,28 +77,66 @@
             window.parent.postMessage(JSON.stringify(result), PARENT_FRAME);
         }
 
+        // Check for premium subscription status from Firestore
+        async function checkFirestoreSubscription(user) {
+            try {
+                const subscriptionsRef = collection(db, 'customers', user.uid, 'subscriptions');
+                const q = query(subscriptionsRef, where('status', 'in', ['active', 'trialing']));
+                const querySnapshot = await getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    const subscription = querySnapshot.docs[0].data();
+                    console.log('Found active subscription:', subscription);
+                    return {
+                        isPremium: true,
+                        subscriptionStatus: subscription.status,
+                        subscriptionId: querySnapshot.docs[0].id
+                    };
+                } else {
+                    console.log('No active subscriptions found');
+                    return {
+                        isPremium: false,
+                        subscriptionStatus: null,
+                        subscriptionId: null
+                    };
+                }
+            } catch (error) {
+                console.error('Error checking Firestore subscription:', error);
+                return {
+                    isPremium: false,
+                    subscriptionStatus: null,
+                    subscriptionId: null
+                };
+            }
+        }
+
         // Listen for messages from the extension
-        window.addEventListener('message', function({data}) {
+        window.addEventListener('message', async function({data}) {
             console.log('Received message:', data);
             
             if (data.initAuth) {
                 console.log('Starting Google Sign-In with popup...');
-                signInWithPopup(auth, provider)
-                    .then((result) => {
-                        console.log('Sign-in successful:', result.user);
-                        sendResponse({ 
-                            user: {
-                                uid: result.user.uid,
-                                email: result.user.email,
-                                displayName: result.user.displayName,
-                                photoURL: result.user.photoURL
-                            }
-                        });
-                    })
-                    .catch((error) => {
-                        console.error('Sign-in failed:', error);
-                        sendResponse({ error: error });
+                try {
+                    const result = await signInWithPopup(auth, provider);
+                    console.log('Sign-in successful:', result.user);
+                    
+                    // Check subscription status from Firestore
+                    const firestoreStatus = await checkFirestoreSubscription(result.user);
+                    
+                    sendResponse({ 
+                        user: {
+                            uid: result.user.uid,
+                            email: result.user.email,
+                            displayName: result.user.displayName,
+                            photoURL: result.user.photoURL,
+                            isPremium: firestoreStatus.isPremium,
+                            firestoreStatus: firestoreStatus
+                        }
                     });
+                } catch (error) {
+                    console.error('Sign-in failed:', error);
+                    sendResponse({ error: error });
+                }
             }
         });
 

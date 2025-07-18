@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Custom Claims</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .section {
+            background: #f5f5f5;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        .premium {
+            background: #059669;
+        }
+        .free {
+            background: #6b7280;
+        }
+        pre {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>LambdaTrip Custom Claims Test</h1>
+    
+    <div class="section">
+        <h2>Authentication</h2>
+        <button class="btn" onclick="signIn()">Sign in with Google</button>
+        <button class="btn" onclick="signOut()">Sign Out</button>
+        <div id="auth-status">Not signed in</div>
+    </div>
+
+    <div class="section">
+        <h2>Custom Claims</h2>
+        <button class="btn" onclick="checkClaims()">Check Custom Claims</button>
+        <div id="claims-result"></div>
+    </div>
+
+    <div class="section">
+        <h2>Firestore Subscription</h2>
+        <button class="btn" onclick="checkFirestore()">Check Firestore Subscription</button>
+        <div id="firestore-result"></div>
+    </div>
+
+    <div class="section">
+        <h2>Premium Status</h2>
+        <div id="premium-status">Unknown</div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut as firebaseSignOut } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { getFirestore, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDB2SxvMTUYNY53hhYOFqHLCD7zpoztt-Y",
+            authDomain: "lambdatrip.firebaseapp.com",
+            projectId: "lambdatrip",
+            storageBucket: "lambdatrip.appspot.com",
+            messagingSenderId: "105431370700",
+            appId: "1:105431370700:web:5c0d29fc9a6686c207ab69",
+            measurementId: "G-TB7ZWRP97W"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth();
+        const db = getFirestore();
+        const provider = new GoogleAuthProvider();
+
+        // Check Firestore subscription
+        async function checkFirestoreSubscription(user) {
+            try {
+                const subscriptionsRef = collection(db, 'customers', user.uid, 'subscriptions');
+                const q = query(subscriptionsRef, where('status', 'in', ['active', 'trialing']));
+                const querySnapshot = await getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    const subscription = querySnapshot.docs[0].data();
+                    return {
+                        isPremium: true,
+                        subscription: subscription,
+                        subscriptionId: querySnapshot.docs[0].id
+                    };
+                } else {
+                    return {
+                        isPremium: false,
+                        subscription: null,
+                        subscriptionId: null
+                    };
+                }
+            } catch (error) {
+                console.error('Error checking Firestore subscription:', error);
+                return {
+                    isPremium: false,
+                    subscription: null,
+                    subscriptionId: null,
+                    error: error.message
+                };
+            }
+        }
+
+        // Check custom claims
+        async function checkCustomClaims(user) {
+            try {
+                await user.getIdToken(true);
+                const tokenResult = await user.getIdTokenResult();
+                return {
+                    claims: tokenResult.claims,
+                    stripeRole: tokenResult.claims.stripeRole || null,
+                    isPremium: tokenResult.claims.stripeRole === 'premium'
+                };
+            } catch (error) {
+                console.error('Error checking custom claims:', error);
+                return {
+                    claims: null,
+                    stripeRole: null,
+                    isPremium: false,
+                    error: error.message
+                };
+            }
+        }
+
+        // Global functions for buttons
+        window.signIn = async function() {
+            try {
+                const result = await signInWithPopup(auth, provider);
+                document.getElementById('auth-status').innerHTML = `
+                    <strong>Signed in as:</strong> ${result.user.email}<br>
+                    <strong>UID:</strong> ${result.user.uid}
+                `;
+                checkClaims();
+                checkFirestore();
+            } catch (error) {
+                document.getElementById('auth-status').innerHTML = `Error: ${error.message}`;
+            }
+        };
+
+        window.signOut = async function() {
+            try {
+                await firebaseSignOut(auth);
+                document.getElementById('auth-status').innerHTML = 'Signed out';
+                document.getElementById('claims-result').innerHTML = '';
+                document.getElementById('firestore-result').innerHTML = '';
+                document.getElementById('premium-status').innerHTML = 'Unknown';
+            } catch (error) {
+                document.getElementById('auth-status').innerHTML = `Error: ${error.message}`;
+            }
+        };
+
+        window.checkClaims = async function() {
+            const user = auth.currentUser;
+            if (!user) {
+                document.getElementById('claims-result').innerHTML = '<strong>Error:</strong> Not signed in';
+                return;
+            }
+
+            const claims = await checkCustomClaims(user);
+            document.getElementById('claims-result').innerHTML = `
+                <pre>${JSON.stringify(claims, null, 2)}</pre>
+            `;
+            updatePremiumStatus();
+        };
+
+        window.checkFirestore = async function() {
+            const user = auth.currentUser;
+            if (!user) {
+                document.getElementById('firestore-result').innerHTML = '<strong>Error:</strong> Not signed in';
+                return;
+            }
+
+            const firestore = await checkFirestoreSubscription(user);
+            document.getElementById('firestore-result').innerHTML = `
+                <pre>${JSON.stringify(firestore, null, 2)}</pre>
+            `;
+            updatePremiumStatus();
+        };
+
+        async function updatePremiumStatus() {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const claims = await checkCustomClaims(user);
+            const firestore = await checkFirestoreSubscription(user);
+            
+            const isPremium = claims.isPremium || firestore.isPremium;
+            const statusDiv = document.getElementById('premium-status');
+            
+            if (isPremium) {
+                statusDiv.innerHTML = '<span class="premium">⭐ PREMIUM USER</span>';
+                statusDiv.className = 'premium';
+            } else {
+                statusDiv.innerHTML = '<span class="free">Free User</span>';
+                statusDiv.className = 'free';
+            }
+        }
+
+        // Listen for auth state changes
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                document.getElementById('auth-status').innerHTML = `
+                    <strong>Signed in as:</strong> ${user.email}<br>
+                    <strong>UID:</strong> ${user.uid}
+                `;
+                checkClaims();
+                checkFirestore();
+            } else {
+                document.getElementById('auth-status').innerHTML = 'Not signed in';
+                document.getElementById('claims-result').innerHTML = '';
+                document.getElementById('firestore-result').innerHTML = '';
+                document.getElementById('premium-status').innerHTML = 'Unknown';
+            }
+        });
+    </script>
+</body>
+</html> 

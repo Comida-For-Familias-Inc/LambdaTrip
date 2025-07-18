@@ -16,67 +16,95 @@ chrome.runtime.onInstalled.addListener(() => {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'analyzeLandmark') {
-    const imageUrl = info.srcUrl;
-    
-    // Send message to content script to show modal
     chrome.tabs.sendMessage(tab.id, {
       action: 'analyzeImage',
-      imageUrl: imageUrl
+      imageUrl: info.srcUrl
     });
   }
 });
 
-// Check if offscreen document exists
-async function hasOffscreenDocument() {
-  const matchedClients = await self.clients.matchAll();
-  const found = matchedClients.some(
-    (c) => c.url === chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)
-  );
-  return found;
-}
-
-// Create offscreen document if needed
-async function setupOffscreenDocument() {
-  if (!(await hasOffscreenDocument())) {
-    await chrome.offscreen.createDocument({
-      url: OFFSCREEN_DOCUMENT_PATH,
-      reasons: [chrome.offscreen.Reason.DOM_SCRAPING],
-      justification: 'Needed for Firebase Auth popup'
-    });
-  }
-}
-
-// Close offscreen document
-async function closeOffscreenDocument() {
-  if (await hasOffscreenDocument()) {
-    await chrome.offscreen.closeDocument();
-  }
-}
-
-// Send message to offscreen document and wait for response
+// Firebase Auth functions
 async function getAuthFromOffscreen() {
-  await setupOffscreenDocument();
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({action: 'getAuth', target: 'offscreen'}, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError);
+    // Create offscreen document if it doesn't exist
+    chrome.offscreen.createDocument({
+      url: OFFSCREEN_DOCUMENT_PATH,
+      reasons: ['AUTH'],
+      justification: 'Firebase Auth requires an offscreen document'
+    }).then(() => {
+      // Send message to offscreen document
+      chrome.runtime.sendMessage({
+        target: 'offscreen',
+        type: 'firebase-signin'
+      }).then(response => {
+        if (response && response.user) {
+          resolve(response.user);
+        } else {
+          reject(new Error('Sign-in failed'));
+        }
+      }).catch(reject);
+    }).catch(reject);
+  });
+}
+
+async function checkAuthStateFromStorage() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['user'], (result) => {
+      if (result.user) {
+        resolve({ signedIn: true, user: result.user });
       } else {
-        resolve(response);
+        resolve({ signedIn: false, user: null });
       }
     });
   });
 }
 
-// Check current auth state from storage
-async function checkAuthStateFromStorage() {
+// Check subscription status from storage
+async function checkSubscriptionStatus() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['user'], (result) => {
-      if (result.user) {
-        resolve({signedIn: true, user: result.user});
+    chrome.storage.local.get(['user', 'subscriptionCache'], (result) => {
+      if (result.user && result.subscriptionCache) {
+        resolve({
+          isPremium: result.subscriptionCache.isPremium, 
+          firestoreStatus: result.subscriptionCache
+        });
       } else {
-        resolve({signedIn: false, user: null});
+        resolve({isPremium: false, firestoreStatus: null});
       }
     });
+  });
+}
+
+// Check Firestore subscription status directly
+async function checkFirestoreSubscriptionDirect(userId) {
+  return new Promise((resolve) => {
+    // Use the offscreen document to check Firestore
+    chrome.offscreen.createDocument({
+      url: OFFSCREEN_DOCUMENT_PATH,
+      reasons: ['AUTH'],
+      justification: 'Firebase Firestore requires an offscreen document'
+    }).then(() => {
+      chrome.runtime.sendMessage({
+        target: 'offscreen',
+        type: 'check-firestore-subscription',
+        userId: userId
+      }).then(response => {
+        resolve(response);
+      }).catch(error => {
+        console.error('Firestore check error:', error);
+        resolve({isPremium: false, error: error.message});
+      });
+    }).catch(error => {
+      console.error('Offscreen document error:', error);
+      resolve({isPremium: false, error: error.message});
+    });
+  });
+}
+
+// Clear subscription cache
+function clearSubscriptionCache() {
+  chrome.storage.local.remove(['subscriptionCache', 'lastSubscriptionCheck'], () => {
+    console.log('Subscription cache cleared');
   });
 }
 
@@ -114,8 +142,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'firebase-signout') {
-    // Remove user data from Chrome storage
-    chrome.storage.local.remove('user', () => {
+    // Remove user data and subscription cache from Chrome storage
+    chrome.storage.local.remove(['user', 'subscriptionCache', 'lastSubscriptionCheck'], () => {
       sendResponse({success: true});
     });
     return true;
@@ -132,50 +160,93 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     return true;
   }
+  
+  // Subscription status check
+  if (request.type === 'check-subscription-status') {
+    checkSubscriptionStatus()
+      .then(result => {
+        sendResponse(result);
+      })
+      .catch(err => {
+        console.error('Subscription status check error:', err);
+        sendResponse({isPremium: false, firestoreStatus: null});
+      });
+    return true;
+  }
+  
+  // Direct Firestore subscription check
+  if (request.type === 'check-firestore-subscription') {
+    checkFirestoreSubscriptionDirect(request.userId)
+      .then(result => {
+        sendResponse(result);
+      })
+      .catch(err => {
+        console.error('Direct Firestore check error:', err);
+        sendResponse({isPremium: false, error: err.message});
+      });
+    return true;
+  }
+  
+  // Clear subscription cache
+  if (request.type === 'clear-subscription-cache') {
+    clearSubscriptionCache();
+    sendResponse({success: true});
+    return true;
+  }
 });
 
+// API call function
 async function analyzeLandmarkImage(imageUrl) {
   try {
-    
-    // Step 1: Analyze image with ImageProcessorFunction
+    // First API call to analyze the image
     const imageResponse = await fetch(`${API_BASE_URL}/analyze-image`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ image_url: imageUrl })
+      body: JSON.stringify({
+        image_url: imageUrl
+      })
     });
 
     if (!imageResponse.ok) {
-      throw new Error(`Image analysis failed: ${imageResponse.status} - ${imageResponse.statusText}`);
+      throw new Error(`Image analysis failed: ${imageResponse.status}`);
     }
 
     const imageData = await imageResponse.json();
     
-    // Step 2: Get AI analysis with LandmarkAnalyzerFunction
-    const analysisResponse = await fetch(`${API_BASE_URL}/analyze-landmark`, {
+    // Second API call to get landmark analysis
+    const landmarkResponse = await fetch(`${API_BASE_URL}/analyze-landmark`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
-        analysis_data: imageData.analysis_data 
+      body: JSON.stringify({
+        analysis_data: imageData
       })
     });
 
-    if (!analysisResponse.ok) {
-      throw new Error(`AI analysis failed: ${analysisResponse.status} - ${analysisResponse.statusText}`);
+    if (!landmarkResponse.ok) {
+      throw new Error(`Landmark analysis failed: ${landmarkResponse.status}`);
     }
 
-    const analysisData = await analysisResponse.json();
+    const landmarkData = await landmarkResponse.json();
     
-    return {
-      imageAnalysis: imageData,
-      aiAnalysis: analysisData
-    };
-    
+    // Increment usage count for free users
+    chrome.storage.local.get(['user', 'usageCount', 'subscriptionCache'], (result) => {
+      const user = result.user;
+      const currentCount = result.usageCount || 0;
+      const isPremium = result.subscriptionCache && result.subscriptionCache.isPremium;
+      
+      // Only increment if user is not premium
+      if (!user || !isPremium) {
+        chrome.storage.local.set({ usageCount: currentCount + 1 });
+      }
+    });
+
+    return landmarkData;
   } catch (error) {
-    console.error('LambdaTrip API Error:', error);
+    console.error('API Error:', error);
     throw error;
   }
 } 

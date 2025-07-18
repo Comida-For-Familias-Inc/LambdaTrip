@@ -8,6 +8,18 @@
     ],
     "rewrites": [
       {
+        "source": "/auth-tab",
+        "destination": "/auth-tab.html"
+      },
+      {
+        "source": "/payment",
+        "destination": "/payment.html"
+      },
+      {
+        "source": "/test-claims",
+        "destination": "/test-claims.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
