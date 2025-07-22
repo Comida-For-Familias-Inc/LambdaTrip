@@ -22,6 +22,7 @@ function checkAuthState() {
 
 // Update UI for premium user
 function updateUIForPremiumUser() {
+  console.log('[popup] Updating UI for premium user');
   if (usageInfo) {
     usageInfo.innerHTML = `
       <div class="premium-status">
@@ -43,6 +44,7 @@ function updateUIForPremiumUser() {
 
 // Update UI for free user
 function updateUIForFreeUser() {
+  console.log('[popup] Updating UI for free user');
   if (usageInfo) {
     usageInfo.innerHTML = `
       <div class="usage-limit">
@@ -82,6 +84,7 @@ function fetchUsageCount() {
 
 // Update UI for signed-in user
 function updateUIForSignedInUser(user) {
+  console.log('[popup] Updating UI for signed-in user');
   if (signInButton) signInButton.style.display = 'none';
   const signOutButton = document.getElementById('google-signout');
   if (signOutButton) signOutButton.classList.remove('hidden');
@@ -108,6 +111,7 @@ function updateUIForSignedInUser(user) {
 
 // Update UI for signed-out user
 function updateUIForSignedOutUser() {
+  console.log('[popup] Updating UI for signed-out user');
   if (signInButton) signInButton.style.display = 'block';
   const signOutButton = document.getElementById('google-signout');
   if (signOutButton) signOutButton.classList.add('hidden');
@@ -144,13 +148,19 @@ function updateUIForSignedOutUser() {
 // Handle sign-in button click
 if (signInButton) {
   signInButton.addEventListener('click', () => {
-    console.log('[popup] Sign-in button clicked');
+    if (signInButton.disabled) return; // Prevent double click
+    signInButton.disabled = true;
+    console.log('[popup] Sign-in button disabled');
     chrome.runtime.sendMessage({ type: 'firebase-signin' }, (response) => {
-      console.log('[popup] Sign-in response:', response);
+      signInButton.disabled = false;
+      console.log('[popup] Sign-in button enabled');
       if (response && response.success) {
-        // Instead of just updating UI with response.user, refresh from storage
-        checkAuthState();
+        // Do not call checkAuthState();
+        // UI will update via auth-state-changed event
       } else {
+        if (response?.error?.code === 'auth/cancelled-popup-request') {
+          alert('Please complete the previous sign-in popup before trying again.');
+        }
         console.error('[popup] Sign-in failed:', response?.error);
       }
     });
@@ -197,4 +207,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
 
+}); 
+
+document.addEventListener('DOMContentLoaded', () => {
+  checkAuthState();
 }); 
