@@ -25,25 +25,41 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 // Firebase Auth functions
 async function getAuthFromOffscreen() {
-  return new Promise((resolve, reject) => {
-    // Create offscreen document if it doesn't exist
-    chrome.offscreen.createDocument({
-      url: OFFSCREEN_DOCUMENT_PATH,
-      reasons: ['AUTH'],
-      justification: 'Firebase Auth requires an offscreen document'
-    }).then(() => {
+  console.log('[background] getAuthFromOffscreen called');
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Use the new check here
+      const hasDocument = await chrome.offscreen.hasDocument();
+      if (!hasDocument) {
+        await chrome.offscreen.createDocument({
+          url: OFFSCREEN_DOCUMENT_PATH,
+          reasons: ['IFRAME_SCRIPTING'],
+          justification: 'Firebase Auth requires an offscreen document'
+        });
+        console.log('[background] Offscreen document created');
+      } else {
+        console.log('[background] Offscreen document already exists');
+      }
       // Send message to offscreen document
       chrome.runtime.sendMessage({
         target: 'offscreen',
         type: 'firebase-signin'
       }).then(response => {
+        console.log('[background] Received response from offscreen for firebase-signin:', response);
         if (response && response.user) {
           resolve(response.user);
         } else {
+          console.error('[background] No user returned from offscreen sign-in response:', response);
           reject(new Error('Sign-in failed'));
         }
-      }).catch(reject);
-    }).catch(reject);
+      }).catch(err => {
+        console.error('[background] Error sending message to offscreen:', err);
+        reject(err);
+      });
+    } catch (err) {
+      console.error('[background] Error creating offscreen document:', err);
+      reject(err);
+    }
   });
 }
 
@@ -62,11 +78,11 @@ async function checkAuthStateFromStorage() {
 // Check subscription status from storage
 async function checkSubscriptionStatus() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['user', 'subscriptionCache'], (result) => {
-      if (result.user && result.subscriptionCache) {
+    chrome.storage.local.get(['user'], (result) => {
+      if (result.user && result.user.firestoreStatus) {
         resolve({
-          isPremium: result.subscriptionCache.isPremium, 
-          firestoreStatus: result.subscriptionCache
+          isPremium: result.user.firestoreStatus.isPremium, 
+          firestoreStatus: result.user.firestoreStatus
         });
       } else {
         resolve({isPremium: false, firestoreStatus: null});
@@ -77,13 +93,20 @@ async function checkSubscriptionStatus() {
 
 // Check Firestore subscription status directly
 async function checkFirestoreSubscriptionDirect(userId) {
-  return new Promise((resolve) => {
-    // Use the offscreen document to check Firestore
-    chrome.offscreen.createDocument({
-      url: OFFSCREEN_DOCUMENT_PATH,
-      reasons: ['AUTH'],
-      justification: 'Firebase Firestore requires an offscreen document'
-    }).then(() => {
+  return new Promise(async (resolve) => {
+    try {
+      // Check if offscreen document already exists
+      const hasDocument = await chrome.offscreen.hasDocument();
+      if (!hasDocument) {
+        await chrome.offscreen.createDocument({
+          url: OFFSCREEN_DOCUMENT_PATH,
+          reasons: ['IFRAME_SCRIPTING'],
+          justification: 'Firebase Firestore requires an offscreen document'
+        });
+        console.log('[background] Offscreen document created for Firestore subscription check');
+      } else {
+        console.log('[background] Offscreen document already exists for Firestore subscription check');
+      }
       chrome.runtime.sendMessage({
         target: 'offscreen',
         type: 'check-firestore-subscription',
@@ -94,17 +117,10 @@ async function checkFirestoreSubscriptionDirect(userId) {
         console.error('Firestore check error:', error);
         resolve({isPremium: false, error: error.message});
       });
-    }).catch(error => {
+    } catch (error) {
       console.error('Offscreen document error:', error);
       resolve({isPremium: false, error: error.message});
-    });
-  });
-}
-
-// Clear subscription cache
-function clearSubscriptionCache() {
-  chrome.storage.local.remove(['subscriptionCache', 'lastSubscriptionCheck'], () => {
-    console.log('Subscription cache cleared');
+    }
   });
 }
 
@@ -127,24 +143,38 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   // Firebase Auth handlers
   if (request.type === 'firebase-signin') {
+    console.log('[background] Received firebase-signin request');
     getAuthFromOffscreen()
       .then(user => {
-        // Store user data in Chrome storage
-        chrome.storage.local.set({user: user}, () => {
-          sendResponse({success: true, user: user});
-        });
+        console.log('[background] getAuthFromOffscreen result:', user);
+        if (user && user.uid) {
+          // Store user data in Chrome storage
+          chrome.storage.local.set({user: user}, () => {
+            console.log('[background] User stored in chrome.storage.local:', user);
+            sendResponse({success: true, user: user});
+            // Broadcast auth state changed
+            chrome.runtime.sendMessage({ type: 'auth-state-changed', user: user });
+          });
+        } else {
+          console.error('[background] No user returned from sign-in.');
+          sendResponse({success: false, error: 'No user returned from sign-in.'});
+        }
       })
       .catch(err => {
-        console.error('Sign-in error:', err);
+        console.error('[background] Sign-in error:', err);
         sendResponse({success: false, error: err.message});
       });
     return true; // Indicates async response
   }
   
   if (request.type === 'firebase-signout') {
-    // Remove user data and subscription cache from Chrome storage
-    chrome.storage.local.remove(['user', 'subscriptionCache', 'lastSubscriptionCheck'], () => {
+    console.log('[background] Received firebase-signout request');
+    // Remove user data from Chrome storage
+    chrome.storage.local.remove(['user', 'lastSubscriptionCheck'], () => {
+      console.log('[background] User removed from chrome.storage.local');
       sendResponse({success: true});
+      // Broadcast auth state changed
+      chrome.runtime.sendMessage({ type: 'auth-state-changed', user: null });
     });
     return true;
   }
@@ -189,7 +219,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   // Clear subscription cache
   if (request.type === 'clear-subscription-cache') {
-    clearSubscriptionCache();
+    // This function is no longer needed as subscription info is in user object.
+    // Keeping the structure for now, but it will do nothing.
+    console.log('clear-subscription-cache request received, but no cache to clear.');
     sendResponse({success: true});
     return true;
   }
@@ -233,13 +265,12 @@ async function analyzeLandmarkImage(imageUrl) {
     const landmarkData = await landmarkResponse.json();
     
     // Increment usage count for free users
-    chrome.storage.local.get(['user', 'usageCount', 'subscriptionCache'], (result) => {
+    chrome.storage.local.get(['user', 'usageCount'], (result) => {
       const user = result.user;
       const currentCount = result.usageCount || 0;
-      const isPremium = result.subscriptionCache && result.subscriptionCache.isPremium;
       
       // Only increment if user is not premium
-      if (!user || !isPremium) {
+      if (!user || !user.firestoreStatus || !user.firestoreStatus.isPremium) {
         chrome.storage.local.set({ usageCount: currentCount + 1 });
       }
     });

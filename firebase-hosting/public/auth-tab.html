@@ -111,18 +111,33 @@
         }
 
         // Listen for messages from the extension
-        window.addEventListener('message', async function({data}) {
+        window.addEventListener('message', async function(event) {
+            const data = event.data;
             console.log('Received message:', data);
-            
+            console.log("Type of data:", typeof data);
+            console.log("Data:", data);
+            // Extract _messageId if present
+            let messageId = null;
+            if (typeof data === 'object' && data !== null && '_messageId' in data) {
+                console.log('Message ID(object):', data._messageId);
+                messageId = data._messageId;
+            } else if (typeof data === 'string') {
+                try {
+                    const parsed = JSON.parse(data);
+                    if ('_messageId' in parsed) {
+                        messageId = parsed._messageId;
+                        console.log('Message ID(string):', messageId);
+                    }
+                } catch (e) {}
+            }
             if (data.initAuth) {
                 console.log('Starting Google Sign-In with popup...');
                 try {
                     const result = await signInWithPopup(auth, provider);
                     console.log('Sign-in successful:', result.user);
-                    
+                    console.log('Message ID:', messageId);
                     // Check subscription status from Firestore
                     const firestoreStatus = await checkFirestoreSubscription(result.user);
-                    
                     sendResponse({ 
                         user: {
                             uid: result.user.uid,
@@ -131,11 +146,12 @@
                             photoURL: result.user.photoURL,
                             isPremium: firestoreStatus.isPremium,
                             firestoreStatus: firestoreStatus
-                        }
+                        },
+                        _messageId: messageId
                     });
                 } catch (error) {
                     console.error('Sign-in failed:', error);
-                    sendResponse({ error: error });
+                    sendResponse({ error: error, _messageId: messageId });
                 }
             }
         });

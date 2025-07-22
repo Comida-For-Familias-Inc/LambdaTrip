@@ -6,99 +6,16 @@ const usageInfo = document.getElementById('usage-info');
 const upgradeButton = document.getElementById('upgrade-button');
 const usageCountSection = document.getElementById('usage-count');
 const usageCountValue = document.getElementById('usage-count-value');
-const refreshSubscriptionButton = document.getElementById('refresh-subscription');
 
 const USAGE_QUOTA = 30; // Example quota, change as needed
-const SUBSCRIPTION_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 // Check authentication state via background script
 function checkAuthState() {
   chrome.runtime.sendMessage({ type: 'firebase-auth-state' }, (response) => {
     if (response && response.signedIn && response.user) {
       updateUIForSignedInUser(response.user);
-      // Check cached subscription status first, then refresh if needed
-      checkCachedSubscriptionStatus(response.user.uid);
     } else {
       updateUIForSignedOutUser();
-    }
-  });
-}
-
-// Check cached subscription status with smart refresh
-function checkCachedSubscriptionStatus(userId) {
-  chrome.storage.local.get(['subscriptionCache', 'lastSubscriptionCheck'], (result) => {
-    const now = Date.now();
-    const lastCheck = result.lastSubscriptionCheck || 0;
-    const cachedSubscription = result.subscriptionCache;
-    
-    // If cache is fresh (less than 5 minutes old), use it
-    if (cachedSubscription && (now - lastCheck) < SUBSCRIPTION_CACHE_DURATION) {
-      console.log('Using cached subscription status');
-      if (cachedSubscription.isPremium) {
-        updateUIForPremiumUser();
-      } else {
-        updateUIForFreeUser();
-      }
-    } else {
-      // Cache is stale or doesn't exist, refresh from Firestore
-      console.log('Refreshing subscription status from Firestore');
-      refreshSubscriptionStatus(userId);
-    }
-  });
-}
-
-// Refresh subscription status from Firestore
-function refreshSubscriptionStatus(userId) {
-  chrome.runtime.sendMessage({ 
-    type: 'check-firestore-subscription', 
-    userId: userId 
-  }, (response) => {
-    if (response && !response.error) {
-      // Cache the result
-      const cacheData = {
-        subscriptionCache: response,
-        lastSubscriptionCheck: Date.now()
-      };
-      chrome.storage.local.set(cacheData);
-      
-      // Update UI
-      if (response.isPremium) {
-        updateUIForPremiumUser();
-      } else {
-        updateUIForFreeUser();
-      }
-    } else {
-      console.error('Error refreshing subscription:', response?.error);
-      // Fall back to cached data if available
-      chrome.storage.local.get(['subscriptionCache'], (result) => {
-        if (result.subscriptionCache) {
-          if (result.subscriptionCache.isPremium) {
-            updateUIForPremiumUser();
-          } else {
-            updateUIForFreeUser();
-          }
-        } else {
-          updateUIForFreeUser();
-        }
-      });
-    }
-  });
-}
-
-// Force refresh subscription status (for testing or manual refresh)
-function forceRefreshSubscription(userId) {
-  chrome.storage.local.remove(['subscriptionCache', 'lastSubscriptionCheck'], () => {
-    refreshSubscriptionStatus(userId);
-  });
-}
-
-// Check subscription status from background script (legacy)
-function checkSubscriptionStatus() {
-  chrome.runtime.sendMessage({ type: 'check-subscription-status' }, (response) => {
-    if (response && response.isPremium) {
-      updateUIForPremiumUser();
-    } else {
-      updateUIForFreeUser();
     }
   });
 }
@@ -122,10 +39,6 @@ function updateUIForPremiumUser() {
     upgradeButton.style.display = 'none';
   }
   
-  // Show refresh button for signed-in users
-  if (refreshSubscriptionButton) {
-    refreshSubscriptionButton.style.display = 'block';
-  }
 }
 
 // Update UI for free user
@@ -145,11 +58,6 @@ function updateUIForFreeUser() {
   
   if (upgradeButton) {
     upgradeButton.style.display = 'block';
-  }
-  
-  // Show refresh button for signed-in users
-  if (refreshSubscriptionButton) {
-    refreshSubscriptionButton.style.display = 'block';
   }
   
   fetchUsageCount();
@@ -185,8 +93,8 @@ function updateUIForSignedInUser(user) {
       user.email.split('@')[0].slice(0, 2).toUpperCase();
     
     // Check if user is premium from cached data
-    chrome.storage.local.get(['subscriptionCache'], (result) => {
-      const isPremium = result.subscriptionCache && result.subscriptionCache.isPremium;
+    chrome.storage.local.get(['user'], (result) => {
+      const isPremium = result.user && result.user.firestoreStatus && result.user.firestoreStatus.isPremium;
       const premiumBadge = isPremium ? '<span class="premium-badge">⭐ Premium</span>' : '';
       
       userInfo.innerHTML = `
@@ -230,26 +138,20 @@ function updateUIForSignedOutUser() {
     upgradeButton.style.display = 'block';
   }
   
-  // Hide refresh button for signed-out users
-  if (refreshSubscriptionButton) {
-    refreshSubscriptionButton.style.display = 'none';
-  }
-  
   fetchUsageCount();
 }
 
 // Handle sign-in button click
 if (signInButton) {
   signInButton.addEventListener('click', () => {
+    console.log('[popup] Sign-in button clicked');
     chrome.runtime.sendMessage({ type: 'firebase-signin' }, (response) => {
+      console.log('[popup] Sign-in response:', response);
       if (response && response.success) {
-        updateUIForSignedInUser(response.user);
-        // Check cached subscription after sign-in
-        if (response.user.uid) {
-          checkCachedSubscriptionStatus(response.user.uid);
-        }
+        // Instead of just updating UI with response.user, refresh from storage
+        checkAuthState();
       } else {
-        console.error('Sign-in failed:', response?.error);
+        console.error('[popup] Sign-in failed:', response?.error);
       }
     });
   });
@@ -260,10 +162,7 @@ if (signOutButton) {
   signOutButton.addEventListener('click', () => {
     chrome.runtime.sendMessage({ type: 'firebase-signout' }, (response) => {
       if (response && response.success) {
-        // Clear subscription cache on sign-out
-        chrome.storage.local.remove(['subscriptionCache', 'lastSubscriptionCheck'], () => {
           updateUIForSignedOutUser();
-        });
       }
     });
   });
@@ -276,57 +175,20 @@ if (upgradeButton) {
   });
 }
 
-// Handle refresh subscription button click
-if (refreshSubscriptionButton) {
-  refreshSubscriptionButton.addEventListener('click', () => {
-    chrome.storage.local.get(['user'], (result) => {
-      if (result.user && result.user.uid) {
-        // Show loading state
-        refreshSubscriptionButton.innerHTML = `
-          <svg class="feature-icon" viewBox="0 0 20 20" fill="currentColor" style="width: 14px; height: 14px;">
-            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
-          </svg>
-          Refreshing...
-        `;
-        refreshSubscriptionButton.disabled = true;
-        
-        forceRefreshSubscription(result.user.uid);
-        
-        // Reset button after a short delay
-        setTimeout(() => {
-          refreshSubscriptionButton.innerHTML = `
-            <svg class="feature-icon" viewBox="0 0 20 20" fill="currentColor" style="width: 14px; height: 14px;">
-              <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
-            </svg>
-            Refresh Status
-          `;
-          refreshSubscriptionButton.disabled = false;
-        }, 2000);
-      }
-    });
-  });
-}
-
-// Initialize the popup
-document.addEventListener('DOMContentLoaded', () => {
-  checkAuthState();
-});
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'auth-state-changed') {
+    console.log('[popup] Received auth-state-changed:', request);
     if (request.user) {
       updateUIForSignedInUser(request.user);
-      // Check cached subscription when auth state changes
-      if (request.user.uid) {
-        checkCachedSubscriptionStatus(request.user.uid);
-      }
     } else {
       updateUIForSignedOutUser();
     }
   }
   
   if (request.type === 'subscription-status-changed') {
+    console.log('[popup] Received subscription-status-changed:', request);
     if (request.isPremium) {
       updateUIForPremiumUser();
     } else {
@@ -334,12 +196,5 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
   }
   
-  // Handle manual refresh request
-  if (request.type === 'refresh-subscription') {
-    chrome.storage.local.get(['user'], (result) => {
-      if (result.user && result.user.uid) {
-        forceRefreshSubscription(result.user.uid);
-      }
-    });
-  }
+
 }); 

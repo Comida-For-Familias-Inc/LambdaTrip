@@ -82,7 +82,7 @@
     .btn-signout {
       position: absolute;
       top: -5px;
-      right: 0;
+      right: 75px;
       background: #ffe4e6;
       color: #dc2626;
       border: none;
@@ -294,6 +294,24 @@
       height: 18px;
       color: #6366f1;
     }
+
+    .premium-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: linear-gradient(90deg, #fbbf24 0%, #f59e42 100%);
+      color: #fff;
+      border-radius: 12px;
+      padding: 4px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(251,191,36,0.15);
+      letter-spacing: 0.02em;
+      position: absolute;
+      top: 145px;
+      right: 50px;
+      z-index: 1;
+    }
   </style>
 </head>
 <body>
@@ -337,13 +355,6 @@
       <!-- Usage Info Section -->
       <div id="usage-info"></div>
       
-      <!-- Subscription Refresh Button (hidden by default) -->
-      <button id="refresh-subscription" class="btn btn-secondary" style="display:none; margin-top: 8px; font-size: 12px; padding: 8px 16px;">
-        <svg class="feature-icon" viewBox="0 0 20 20" fill="currentColor" style="width: 14px; height: 14px;">
-          <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
-        </svg>
-        Refresh Status
-      </button>
       
       <!-- Upgrade Button -->
       <button id="upgrade-button" class="btn btn-upgrade hidden">
