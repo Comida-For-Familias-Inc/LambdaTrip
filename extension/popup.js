@@ -10,8 +10,8 @@ const usageCountValue = document.getElementById('usage-count-value');
 const USAGE_QUOTA = 30; // Example quota, change as needed
 
 // Check authentication state via background script
-function checkAuthState() {
-  chrome.runtime.sendMessage({ type: 'firebase-auth-state' }, (response) => {
+  function checkAuthState() {
+    chrome.runtime.sendMessage({ target: 'background', type: 'firebase-auth-state-popup' }, (response) => {
     if (response && response.signedIn && response.user) {
       updateUIForSignedInUser(response.user);
     } else {
@@ -151,7 +151,7 @@ if (signInButton) {
     if (signInButton.disabled) return; // Prevent double click
     signInButton.disabled = true;
     console.log('[popup] Sign-in button disabled');
-    chrome.runtime.sendMessage({ type: 'firebase-signin' }, (response) => {
+    chrome.runtime.sendMessage({ target: 'background', type: 'firebase-signin-popup' }, (response) => {
       signInButton.disabled = false;
       console.log('[popup] Sign-in button enabled');
       if (response && response.success) {
@@ -170,7 +170,7 @@ if (signInButton) {
 // Handle sign-out button click
 if (signOutButton) {
   signOutButton.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'firebase-signout' }, (response) => {
+    chrome.runtime.sendMessage({ target: 'background', type: 'firebase-signout-popup' }, (response) => {
       if (response && response.success) {
           updateUIForSignedOutUser();
       }
@@ -210,5 +210,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 }); 
 
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('[popup] DOMContentLoaded');
   checkAuthState();
 }); 

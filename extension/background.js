@@ -43,7 +43,7 @@ async function getAuthFromOffscreen() {
       // Send message to offscreen document
       chrome.runtime.sendMessage({
         target: 'offscreen',
-        type: 'firebase-signin'
+        type: 'firebase-signin-bg'
       }).then(response => {
         console.log('[background] Received response from offscreen for firebase-signin:', response);
         if (response && response.user) {
@@ -109,7 +109,7 @@ async function checkFirestoreSubscriptionDirect(userId) {
       }
       chrome.runtime.sendMessage({
         target: 'offscreen',
-        type: 'check-firestore-subscription',
+        type: 'check-firestore-subscription-bg',
         userId: userId
       }).then(response => {
         resolve(response);
@@ -140,9 +140,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Return true to indicate we will send a response asynchronously
     return true;
   }
-  
+  if (request.target !== 'background') {
+    return; // Exit early, don't process this message
+  }
   // Firebase Auth handlers
-  if (request.type === 'firebase-signin') {
+  if (request.type === 'firebase-signin-popup') {
     console.log('[background] Received firebase-signin request');
     getAuthFromOffscreen()
       .then(user => {
@@ -167,19 +169,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Indicates async response
   }
   
-  if (request.type === 'firebase-signout') {
+  if (request.type === 'firebase-signout-popup') {
     console.log('[background] Received firebase-signout request');
-    // Remove user data from Chrome storage
-    chrome.storage.local.remove(['user', 'lastSubscriptionCheck'], () => {
-      console.log('[background] User removed from chrome.storage.local');
-      sendResponse({success: true});
-      // Broadcast auth state changed
-      chrome.runtime.sendMessage({ type: 'auth-state-changed', user: null });
+    // First, call Firebase Auth signOut via offscreen document
+    chrome.runtime.sendMessage({
+      target: 'offscreen',
+      type: 'firebase-signout-bg'
+    }).then(() => {
+      // Then remove user data from Chrome storage
+      chrome.storage.local.remove(['user', 'lastSubscriptionCheck'], () => {
+        console.log('[background] User removed from chrome.storage.local');
+        sendResponse({success: true});
+        // Broadcast auth state changed
+        chrome.runtime.sendMessage({ type: 'auth-state-changed', user: null });
+      });
+    }).catch(err => {
+      console.error('[background] Firebase signOut error:', err);
+      // Still remove local data even if Firebase signOut fails
+      chrome.storage.local.remove(['user', 'lastSubscriptionCheck'], () => {
+        sendResponse({success: true});
+        chrome.runtime.sendMessage({ type: 'auth-state-changed', user: null });
+      });
     });
     return true;
   }
   
-  if (request.type === 'firebase-auth-state') {
+  if (request.type === 'firebase-auth-state-popup') {
+    console.log('[background] Received firebase-auth-state request');
     checkAuthStateFromStorage()
       .then(result => {
         sendResponse(result);

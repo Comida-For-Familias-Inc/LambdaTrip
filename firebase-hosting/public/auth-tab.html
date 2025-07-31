@@ -154,6 +154,17 @@
                     sendResponse({ error: error, _messageId: messageId });
                 }
             }
+            if (data.signOut) {
+                console.log('Starting Firebase Sign-Out...');
+                try {
+                    await auth.signOut();
+                    console.log('Sign-out successful');
+                    sendResponse({ success: true, _messageId: messageId });
+                } catch (error) {
+                    console.error('Sign-out failed:', error);
+                    sendResponse({ error: error, _messageId: messageId });
+                }
+            }
         });
 
         // Auto-trigger authentication when page loads (for testing)
