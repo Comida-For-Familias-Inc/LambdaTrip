@@ -7,10 +7,12 @@
     "activeTab",
     "contextMenus",
     "storage",
-    "scripting"
+    "scripting",
+    "offscreen"
   ],
   "host_permissions": [
     "https://tbj0hc15u4.execute-api.us-east-1.amazonaws.com/*",
+    "https://lambdatrip.web.app/*",
     "<all_urls>"
   ],
   "background": {

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LambdaTrip Authentication</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 400px;
+            margin: 50px auto;
+        }
+        .status {
+            color: #666;
+            margin: 20px 0;
+        }
+        .loading {
+            color: #2196F3;
+        }
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        .btn:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LambdaTrip Authentication</h1>
+        <div class="status">
+            <p>Sign in to access your LambdaTrip features</p>
+            <p class="loading">Click the button below to start</p>
+        </div>
+        <button class="btn" onclick="startAuth()">Sign in with Google</button>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getAuth, signInWithPopup, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { getFirestore, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDB2SxvMTUYNY53hhYOFqHLCD7zpoztt-Y",
+            authDomain: "lambdatrip.firebaseapp.com",
+            projectId: "lambdatrip",
+            storageBucket: "lambdatrip.appspot.com",
+            messagingSenderId: "105431370700",
+            appId: "1:105431370700:web:5c0d29fc9a6686c207ab69",
+            measurementId: "G-TB7ZWRP97W"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth();
+        const db = getFirestore();
+        const provider = new GoogleAuthProvider();
+
+        // This gives you a reference to the parent frame, i.e. the offscreen document.
+        const PARENT_FRAME = document.location.ancestorOrigins[0];
+
+        function sendResponse(result) {
+            console.log('Sending response to parent:', result);
+            window.parent.postMessage(JSON.stringify(result), PARENT_FRAME);
+        }
+
+        // Check for premium subscription status from Firestore
+        async function checkFirestoreSubscription(user) {
+            try {
+                const subscriptionsRef = collection(db, 'customers', user.uid, 'subscriptions');
+                const q = query(subscriptionsRef, where('status', 'in', ['active', 'trialing']));
+                const querySnapshot = await getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    const subscription = querySnapshot.docs[0].data();
+                    console.log('Found active subscription:', subscription);
+                    return {
+                        isPremium: true,
+                        subscriptionStatus: subscription.status,
+                        subscriptionId: querySnapshot.docs[0].id
+                    };
+                } else {
+                    console.log('No active subscriptions found');
+                    return {
+                        isPremium: false,
+                        subscriptionStatus: null,
+                        subscriptionId: null
+                    };
+                }
+            } catch (error) {
+                console.error('Error checking Firestore subscription:', error);
+                return {
+                    isPremium: false,
+                    subscriptionStatus: null,
+                    subscriptionId: null
+                };
+            }
+        }
+
+        // Listen for messages from the extension
+        window.addEventListener('message', async function(event) {
+            const data = event.data;
+            console.log('Received message:', data);
+            console.log("Type of data:", typeof data);
+            console.log("Data:", data);
+            // Extract _messageId if present
+            let messageId = null;
+            if (typeof data === 'object' && data !== null && '_messageId' in data) {
+                console.log('Message ID(object):', data._messageId);
+                messageId = data._messageId;
+            } else if (typeof data === 'string') {
+                try {
+                    const parsed = JSON.parse(data);
+                    if ('_messageId' in parsed) {
+                        messageId = parsed._messageId;
+                        console.log('Message ID(string):', messageId);
+                    }
+                } catch (e) {}
+            }
+            if (data.initAuth) {
+                console.log('Starting Google Sign-In with popup...');
+                try {
+                    const result = await signInWithPopup(auth, provider);
+                    console.log('Sign-in successful:', result.user);
+                    console.log('Message ID:', messageId);
+                    // Check subscription status from Firestore
+                    const firestoreStatus = await checkFirestoreSubscription(result.user);
+                    sendResponse({ 
+                        user: {
+                            uid: result.user.uid,
+                            email: result.user.email,
+                            displayName: result.user.displayName,
+                            photoURL: result.user.photoURL,
+                            isPremium: firestoreStatus.isPremium,
+                            firestoreStatus: firestoreStatus
+                        },
+                        _messageId: messageId
+                    });
+                } catch (error) {
+                    console.error('Sign-in failed:', error);
+                    sendResponse({ error: error, _messageId: messageId });
+                }
+            }
+            if (data.signOut) {
+                console.log('Starting Firebase Sign-Out...');
+                try {
+                    await auth.signOut();
+                    console.log('Sign-out successful');
+                    sendResponse({ success: true, _messageId: messageId });
+                } catch (error) {
+                    console.error('Sign-out failed:', error);
+                    sendResponse({ error: error, _messageId: messageId });
+                }
+            }
+        });
+
+        // Auto-trigger authentication when page loads (for testing)
+        console.log('Auth page loaded, ready for authentication');
+    </script>
+</body>
+</html> 

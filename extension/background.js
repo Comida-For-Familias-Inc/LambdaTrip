@@ -1,6 +1,13 @@
 // Background script for LambdaTrip Chrome Extension
 const API_BASE_URL = 'https://tbj0hc15u4.execute-api.us-east-1.amazonaws.com/Stage';
 
+// Firebase Auth with Offscreen Document
+const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
+
+// Usage limit configuration
+const USAGE_LIMIT = 30; // Monthly limit for free users
+const USAGE_WARNING_THRESHOLD = 0.8; // Show warning at 80% of limit
+
 // Create context menu on extension install
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -13,25 +20,132 @@ chrome.runtime.onInstalled.addListener(() => {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'analyzeLandmark') {
-    const imageUrl = info.srcUrl;
-    
-    // Send message to content script to show modal
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'analyzeImage',
-      imageUrl: imageUrl
+    // Check usage limit before proceeding
+    checkUsageLimit().then((usageInfo) => {
+      if (usageInfo.canProceed) {
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'analyzeImage',
+          imageUrl: info.srcUrl,
+          usageInfo: usageInfo
+        });
+      } else {
+        // Show blocking message
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'showUsageLimit',
+          usageInfo: usageInfo
+        });
+      }
     });
   }
 });
 
-// Handle messages from content script
+// Firebase Auth functions
+async function getAuthFromOffscreen() {
+  console.log('[background] getAuthFromOffscreen called');
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Use the new check here
+      const hasDocument = await chrome.offscreen.hasDocument();
+      if (!hasDocument) {
+        await chrome.offscreen.createDocument({
+          url: OFFSCREEN_DOCUMENT_PATH,
+          reasons: ['IFRAME_SCRIPTING'],
+          justification: 'Firebase Auth requires an offscreen document'
+        });
+        console.log('[background] Offscreen document created');
+      } else {
+        console.log('[background] Offscreen document already exists');
+      }
+      // Send message to offscreen document
+      chrome.runtime.sendMessage({
+        target: 'offscreen',
+        type: 'firebase-signin-bg'
+      }).then(response => {
+        console.log('[background] Received response from offscreen for firebase-signin:', response);
+        if (response && response.user) {
+          resolve(response.user);
+        } else {
+          console.error('[background] No user returned from offscreen sign-in response:', response);
+          reject(new Error('Sign-in failed'));
+        }
+      }).catch(err => {
+        console.error('[background] Error sending message to offscreen:', err);
+        reject(err);
+      });
+    } catch (err) {
+      console.error('[background] Error creating offscreen document:', err);
+      reject(err);
+    }
+  });
+}
+
+async function checkAuthStateFromStorage() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['user'], (result) => {
+      if (result.user) {
+        resolve({ signedIn: true, user: result.user });
+      } else {
+        resolve({ signedIn: false, user: null });
+      }
+    });
+  });
+}
+
+// Check subscription status from storage
+async function checkSubscriptionStatus() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['user'], (result) => {
+      if (result.user && result.user.firestoreStatus) {
+        resolve({
+          isPremium: result.user.firestoreStatus.isPremium, 
+          firestoreStatus: result.user.firestoreStatus
+        });
+      } else {
+        resolve({isPremium: false, firestoreStatus: null});
+      }
+    });
+  });
+}
+
+// Check Firestore subscription status directly
+async function checkFirestoreSubscriptionDirect(userId) {
+  return new Promise(async (resolve) => {
+    try {
+      // Check if offscreen document already exists
+      const hasDocument = await chrome.offscreen.hasDocument();
+      if (!hasDocument) {
+        await chrome.offscreen.createDocument({
+          url: OFFSCREEN_DOCUMENT_PATH,
+          reasons: ['IFRAME_SCRIPTING'],
+          justification: 'Firebase Firestore requires an offscreen document'
+        });
+        console.log('[background] Offscreen document created for Firestore subscription check');
+      } else {
+        console.log('[background] Offscreen document already exists for Firestore subscription check');
+      }
+      chrome.runtime.sendMessage({
+        target: 'offscreen',
+        type: 'check-firestore-subscription-bg',
+        userId: userId
+      }).then(response => {
+        resolve(response);
+      }).catch(error => {
+        console.error('Firestore check error:', error);
+        resolve({isPremium: false, error: error.message});
+      });
+    } catch (error) {
+      console.error('Offscreen document error:', error);
+      resolve({isPremium: false, error: error.message});
+    }
+  });
+}
+
+// Handle messages from content script and popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Background script received message:', request);
-  
   if (request.action === 'analyzeImage') {
     // Handle the API call asynchronously
     analyzeLandmarkImage(request.imageUrl)
       .then(result => {
-        console.log('Analysis completed successfully:', result);
         sendResponse({ success: true, data: result });
       })
       .catch(error => {
@@ -42,53 +156,249 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Return true to indicate we will send a response asynchronously
     return true;
   }
+  if (request.target !== 'background') {
+    return; // Exit early, don't process this message
+  }
+  // Firebase Auth handlers
+  if (request.type === 'firebase-signin-popup') {
+    console.log('[background] Received firebase-signin request');
+    getAuthFromOffscreen()
+      .then(user => {
+        console.log('[background] getAuthFromOffscreen result:', user);
+        if (user && user.uid) {
+          // Store user data in Chrome storage
+          chrome.storage.local.set({user: user}, () => {
+            console.log('[background] User stored in chrome.storage.local:', user);
+            sendResponse({success: true, user: user});
+            // Broadcast auth state changed
+            chrome.runtime.sendMessage({ type: 'auth-state-changed', user: user });
+          });
+        } else {
+          console.error('[background] No user returned from sign-in.');
+          sendResponse({success: false, error: 'No user returned from sign-in.'});
+        }
+      })
+      .catch(err => {
+        console.error('[background] Sign-in error:', err);
+        sendResponse({success: false, error: err.message});
+      });
+    return true; // Indicates async response
+  }
+  
+  if (request.type === 'firebase-signout-popup') {
+    console.log('[background] Received firebase-signout request');
+    // First, call Firebase Auth signOut via offscreen document
+    chrome.runtime.sendMessage({
+      target: 'offscreen',
+      type: 'firebase-signout-bg'
+    }).then(() => {
+      // Then remove user data from Chrome storage
+      chrome.storage.local.remove(['user', 'lastSubscriptionCheck'], () => {
+        console.log('[background] User removed from chrome.storage.local');
+        sendResponse({success: true});
+        // Broadcast auth state changed
+        chrome.runtime.sendMessage({ type: 'auth-state-changed', user: null });
+      });
+    }).catch(err => {
+      console.error('[background] Firebase signOut error:', err);
+      // Still remove local data even if Firebase signOut fails
+      chrome.storage.local.remove(['user', 'lastSubscriptionCheck'], () => {
+        sendResponse({success: true});
+        chrome.runtime.sendMessage({ type: 'auth-state-changed', user: null });
+      });
+    });
+    return true;
+  }
+  
+  if (request.type === 'firebase-auth-state-popup') {
+    console.log('[background] Received firebase-auth-state request');
+    checkAuthStateFromStorage()
+      .then(result => {
+        sendResponse(result);
+      })
+      .catch(err => {
+        console.error('Auth state check error:', err);
+        sendResponse({signedIn: false, user: null});
+      });
+    return true;
+  }
+  
+  // Subscription status check
+  if (request.type === 'check-subscription-status') {
+    checkSubscriptionStatus()
+      .then(result => {
+        sendResponse(result);
+      })
+      .catch(err => {
+        console.error('Subscription status check error:', err);
+        sendResponse({isPremium: false, firestoreStatus: null});
+      });
+    return true;
+  }
+  
+  // Direct Firestore subscription check
+  if (request.type === 'check-firestore-subscription') {
+    checkFirestoreSubscriptionDirect(request.userId)
+      .then(result => {
+        sendResponse(result);
+      })
+      .catch(err => {
+        console.error('Direct Firestore check error:', err);
+        sendResponse({isPremium: false, error: err.message});
+      });
+    return true;
+  }
+  
+  // Clear subscription cache
+  if (request.type === 'clear-subscription-cache') {
+    // This function is no longer needed as subscription info is in user object.
+    // Keeping the structure for now, but it will do nothing.
+    console.log('clear-subscription-cache request received, but no cache to clear.');
+    sendResponse({success: true});
+    return true;
+  }
+  
+  // Usage limit check
+  if (request.type === 'check-usage-limit') {
+    checkUsageLimit()
+      .then(usageInfo => {
+        sendResponse(usageInfo);
+      })
+      .catch(err => {
+        console.error('Usage limit check error:', err);
+        sendResponse({canProceed: false, error: err.message});
+      });
+    return true;
+  }
+  
+  // Reset usage (for testing purposes)
+  if (request.type === 'reset-usage') {
+    chrome.storage.local.remove(['usageData'], () => {
+      sendResponse({success: true});
+    });
+    return true;
+  }
 });
 
+// API call function
 async function analyzeLandmarkImage(imageUrl) {
   try {
-    console.log('Starting analysis for:', imageUrl);
-    
-    // Step 1: Analyze image with ImageProcessorFunction
+    // First API call to analyze the image
     const imageResponse = await fetch(`${API_BASE_URL}/analyze-image`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ image_url: imageUrl })
+      body: JSON.stringify({
+        image_url: imageUrl
+      })
     });
 
     if (!imageResponse.ok) {
-      throw new Error(`Image analysis failed: ${imageResponse.status} - ${imageResponse.statusText}`);
+      throw new Error(`Image analysis failed: ${imageResponse.status}`);
     }
 
     const imageData = await imageResponse.json();
-    console.log('Image analysis completed:', imageData);
     
-    // Step 2: Get AI analysis with LandmarkAnalyzerFunction
-    const analysisResponse = await fetch(`${API_BASE_URL}/analyze-landmark`, {
+    // Second API call to get landmark analysis
+    const landmarkResponse = await fetch(`${API_BASE_URL}/analyze-landmark`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
-        analysis_data: imageData.analysis_data 
+      body: JSON.stringify({
+        analysis_data: imageData
       })
     });
 
-    if (!analysisResponse.ok) {
-      throw new Error(`AI analysis failed: ${analysisResponse.status} - ${analysisResponse.statusText}`);
+    if (!landmarkResponse.ok) {
+      throw new Error(`Landmark analysis failed: ${landmarkResponse.status}`);
     }
 
-    const analysisData = await analysisResponse.json();
-    console.log('AI analysis completed:', analysisData);
+    const landmarkData = await landmarkResponse.json();
     
-    return {
-      imageAnalysis: imageData,
-      aiAnalysis: analysisData
-    };
-    
+    // Increment usage count using new tracking system
+    await incrementUsage();
+
+    return landmarkData;
   } catch (error) {
-    console.error('LambdaTrip API Error:', error);
+    console.error('API Error:', error);
     throw error;
   }
+} 
+
+// Check usage limit and return usage information
+async function checkUsageLimit() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['user', 'usageData'], (result) => {
+      const user = result.user;
+      const usageData = result.usageData || { count: 0, month: null };
+      
+      // Check if user is premium
+      const isPremium = user && user.firestoreStatus && user.firestoreStatus.isPremium;
+      
+      if (isPremium) {
+        resolve({
+          canProceed: true,
+          isPremium: true,
+          currentUsage: 0,
+          limit: 'unlimited',
+          warning: false
+        });
+        return;
+      }
+      
+      // Check if we need to reset monthly usage
+      const currentMonth = new Date().getFullYear() + '-' + (new Date().getMonth() + 1);
+      if (usageData.month !== currentMonth) {
+        // Reset usage for new month
+        usageData.count = 0;
+        usageData.month = currentMonth;
+        chrome.storage.local.set({ usageData: usageData });
+      }
+      
+      const currentUsage = usageData.count;
+      const canProceed = currentUsage < USAGE_LIMIT;
+      const warning = currentUsage >= Math.floor(USAGE_LIMIT * USAGE_WARNING_THRESHOLD);
+      
+      resolve({
+        canProceed: canProceed,
+        isPremium: false,
+        currentUsage: currentUsage,
+        limit: USAGE_LIMIT,
+        warning: warning,
+        remaining: USAGE_LIMIT - currentUsage
+      });
+    });
+  });
+}
+
+// Increment usage count
+async function incrementUsage() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['user', 'usageData'], (result) => {
+      const user = result.user;
+      const usageData = result.usageData || { count: 0, month: null };
+      
+      // Don't increment for premium users
+      if (user && user.firestoreStatus && user.firestoreStatus.isPremium) {
+        resolve();
+        return;
+      }
+      
+      // Check if we need to reset monthly usage
+      const currentMonth = new Date().getFullYear() + '-' + (new Date().getMonth() + 1);
+      if (usageData.month !== currentMonth) {
+        usageData.count = 0;
+        usageData.month = currentMonth;
+      }
+      
+      usageData.count++;
+      chrome.storage.local.set({ usageData: usageData }, () => {
+        // Broadcast usage update
+        chrome.runtime.sendMessage({ type: 'usage-updated', usageData: usageData });
+        resolve();
+      });
+    });
+  });
 } 
