@@ -8,12 +8,15 @@ console.log('LambdaTrip content script loaded');
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Content script received message:', request);
   if (request.action === 'analyzeImage') {
-    showAnalysisModal(request.imageUrl);
+    showAnalysisModal(request.imageUrl, request.usageInfo);
+  }
+  if (request.action === 'showUsageLimit') {
+    showUsageLimitModal(request.usageInfo);
   }
 });
 
-function showAnalysisModal(imageUrl) {
-  console.log('showAnalysisModal called with:', imageUrl);
+function showAnalysisModal(imageUrl, usageInfo) {
+  console.log('showAnalysisModal called with:', imageUrl, usageInfo);
   if (isAnalyzing) return;
   
   isAnalyzing = true;
@@ -21,6 +24,11 @@ function showAnalysisModal(imageUrl) {
   // Create modal if it doesn't exist
   if (!modal) {
     createModal();
+  }
+  
+  // Show usage warning if applicable
+  if (usageInfo && usageInfo.warning && !usageInfo.isPremium) {
+    showUsageWarning(usageInfo);
   }
   
   // Show loading state
@@ -280,4 +288,61 @@ function closeModal() {
   if (modal) {
     modal.classList.remove('lambdatrip-active');
   }
+}
+
+function showUsageWarning(usageInfo) {
+  const modalContent = document.getElementById('lambdatrip-modal-content');
+  
+  const warningHtml = `
+    <div class="usage-warning">
+      <div class="warning-icon">⚠️</div>
+      <h3>Usage Limit Warning</h3>
+      <p>You've used ${usageInfo.currentUsage} of ${usageInfo.limit} free analyses this month.</p>
+      <p>Only ${usageInfo.remaining} analyses remaining!</p>
+      <div class="warning-actions">
+        <button class="btn-continue" onclick="continueAnalysis()">Continue Analysis</button>
+        <button class="btn-upgrade" onclick="openUpgradePage()">Upgrade to Premium</button>
+      </div>
+    </div>
+  `;
+  
+  modalContent.innerHTML = warningHtml;
+  modal.classList.add('lambdatrip-active');
+  
+  // Add global functions for buttons
+  window.continueAnalysis = () => {
+    modal.classList.remove('lambdatrip-active');
+    // The analysis will continue automatically
+  };
+  
+  window.openUpgradePage = () => {
+    chrome.tabs.create({ url: 'https://lambdatrip.firebaseapp.com/payment' });
+    modal.classList.remove('lambdatrip-active');
+  };
+}
+
+function showUsageLimitModal(usageInfo) {
+  const modalContent = document.getElementById('lambdatrip-modal-content');
+  
+  const limitHtml = `
+    <div class="usage-limit-reached">
+      <div class="limit-icon">🚫</div>
+      <h3>Monthly Usage Limit Reached</h3>
+      <p>You've reached your limit of ${usageInfo.limit} free analyses this month.</p>
+      <p>Upgrade to Premium for unlimited landmark analysis!</p>
+      <div class="limit-actions">
+        <button class="btn-upgrade-primary" onclick="openUpgradePage()">Upgrade to Premium</button>
+        <button class="btn-close" onclick="closeModal()">Close</button>
+      </div>
+    </div>
+  `;
+  
+  modalContent.innerHTML = limitHtml;
+  modal.classList.add('lambdatrip-active');
+  
+  // Add global function for upgrade button
+  window.openUpgradePage = () => {
+    chrome.tabs.create({ url: 'https://lambdatrip.firebaseapp.com/payment' });
+    modal.classList.remove('lambdatrip-active');
+  };
 } 

@@ -33,13 +33,15 @@ function updateUIForPremiumUser() {
   }
   
   if (usageCountSection) {
-    usageCountSection.style.display = 'none';
+    usageCountSection.style.display = 'block';
+    usageCountSection.classList.add('premium');
   }
   
   if (upgradeButton) {
     upgradeButton.style.display = 'none';
   }
   
+  fetchUsageCount();
 }
 
 // Update UI for free user
@@ -67,16 +69,45 @@ function updateUIForFreeUser() {
 
 // Fetch usage count from storage
 function fetchUsageCount() {
-  chrome.storage.local.get(['usageCount'], (result) => {
-    const count = result.usageCount || 0;
+  chrome.storage.local.get(['user', 'usageData'], (result) => {
+    const user = result.user;
+    const usageData = result.usageData || { count: 0, month: null };
+    
+    // Check if user is premium
+    const isPremium = user && user.firestoreStatus && user.firestoreStatus.isPremium;
+    
+    if (isPremium) {
+      if (usageCountValue) {
+        usageCountValue.textContent = 'Unlimited';
+      }
+      if (usageCountSection) {
+        usageCountSection.classList.remove('warning');
+        usageCountSection.classList.add('premium');
+      }
+      return;
+    }
+    
+    // Check if we need to reset monthly usage
+    const currentMonth = new Date().getFullYear() + '-' + (new Date().getMonth() + 1);
+    if (usageData.month !== currentMonth) {
+      usageData.count = 0;
+      usageData.month = currentMonth;
+      chrome.storage.local.set({ usageData: usageData });
+    }
+    
+    const count = usageData.count;
     if (usageCountValue) {
-      usageCountValue.textContent = count;
+      usageCountValue.textContent = USAGE_QUOTA - count;
     }
     
     // Show warning if approaching limit
     if (count >= USAGE_QUOTA * 0.8) {
       if (usageCountSection) {
         usageCountSection.classList.add('warning');
+      }
+    } else {
+      if (usageCountSection) {
+        usageCountSection.classList.remove('warning');
       }
     }
   });
@@ -105,6 +136,13 @@ function updateUIForSignedInUser(user) {
         <div class="user-email">${user.email}</div>
         <div class="user-welcome">Welcome back! ${premiumBadge}</div>
       `;
+      
+      // Update usage UI based on premium status
+      if (isPremium) {
+        updateUIForPremiumUser();
+      } else {
+        updateUIForFreeUser();
+      }
     });
   }
 }
@@ -204,6 +242,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else {
       updateUIForFreeUser();
     }
+  }
+  
+  if (request.type === 'usage-updated') {
+    console.log('[popup] Received usage-updated:', request);
+    fetchUsageCount();
   }
   
 

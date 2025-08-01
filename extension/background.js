@@ -4,6 +4,10 @@ const API_BASE_URL = 'https://tbj0hc15u4.execute-api.us-east-1.amazonaws.com/Sta
 // Firebase Auth with Offscreen Document
 const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
 
+// Usage limit configuration
+const USAGE_LIMIT = 30; // Monthly limit for free users
+const USAGE_WARNING_THRESHOLD = 0.8; // Show warning at 80% of limit
+
 // Create context menu on extension install
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -16,9 +20,21 @@ chrome.runtime.onInstalled.addListener(() => {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'analyzeLandmark') {
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'analyzeImage',
-      imageUrl: info.srcUrl
+    // Check usage limit before proceeding
+    checkUsageLimit().then((usageInfo) => {
+      if (usageInfo.canProceed) {
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'analyzeImage',
+          imageUrl: info.srcUrl,
+          usageInfo: usageInfo
+        });
+      } else {
+        // Show blocking message
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'showUsageLimit',
+          usageInfo: usageInfo
+        });
+      }
     });
   }
 });
@@ -241,6 +257,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({success: true});
     return true;
   }
+  
+  // Usage limit check
+  if (request.type === 'check-usage-limit') {
+    checkUsageLimit()
+      .then(usageInfo => {
+        sendResponse(usageInfo);
+      })
+      .catch(err => {
+        console.error('Usage limit check error:', err);
+        sendResponse({canProceed: false, error: err.message});
+      });
+    return true;
+  }
+  
+  // Reset usage (for testing purposes)
+  if (request.type === 'reset-usage') {
+    chrome.storage.local.remove(['usageData'], () => {
+      sendResponse({success: true});
+    });
+    return true;
+  }
 });
 
 // API call function
@@ -280,20 +317,88 @@ async function analyzeLandmarkImage(imageUrl) {
 
     const landmarkData = await landmarkResponse.json();
     
-    // Increment usage count for free users
-    chrome.storage.local.get(['user', 'usageCount'], (result) => {
-      const user = result.user;
-      const currentCount = result.usageCount || 0;
-      
-      // Only increment if user is not premium
-      if (!user || !user.firestoreStatus || !user.firestoreStatus.isPremium) {
-        chrome.storage.local.set({ usageCount: currentCount + 1 });
-      }
-    });
+    // Increment usage count using new tracking system
+    await incrementUsage();
 
     return landmarkData;
   } catch (error) {
     console.error('API Error:', error);
     throw error;
   }
+} 
+
+// Check usage limit and return usage information
+async function checkUsageLimit() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['user', 'usageData'], (result) => {
+      const user = result.user;
+      const usageData = result.usageData || { count: 0, month: null };
+      
+      // Check if user is premium
+      const isPremium = user && user.firestoreStatus && user.firestoreStatus.isPremium;
+      
+      if (isPremium) {
+        resolve({
+          canProceed: true,
+          isPremium: true,
+          currentUsage: 0,
+          limit: 'unlimited',
+          warning: false
+        });
+        return;
+      }
+      
+      // Check if we need to reset monthly usage
+      const currentMonth = new Date().getFullYear() + '-' + (new Date().getMonth() + 1);
+      if (usageData.month !== currentMonth) {
+        // Reset usage for new month
+        usageData.count = 0;
+        usageData.month = currentMonth;
+        chrome.storage.local.set({ usageData: usageData });
+      }
+      
+      const currentUsage = usageData.count;
+      const canProceed = currentUsage < USAGE_LIMIT;
+      const warning = currentUsage >= Math.floor(USAGE_LIMIT * USAGE_WARNING_THRESHOLD);
+      
+      resolve({
+        canProceed: canProceed,
+        isPremium: false,
+        currentUsage: currentUsage,
+        limit: USAGE_LIMIT,
+        warning: warning,
+        remaining: USAGE_LIMIT - currentUsage
+      });
+    });
+  });
+}
+
+// Increment usage count
+async function incrementUsage() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['user', 'usageData'], (result) => {
+      const user = result.user;
+      const usageData = result.usageData || { count: 0, month: null };
+      
+      // Don't increment for premium users
+      if (user && user.firestoreStatus && user.firestoreStatus.isPremium) {
+        resolve();
+        return;
+      }
+      
+      // Check if we need to reset monthly usage
+      const currentMonth = new Date().getFullYear() + '-' + (new Date().getMonth() + 1);
+      if (usageData.month !== currentMonth) {
+        usageData.count = 0;
+        usageData.month = currentMonth;
+      }
+      
+      usageData.count++;
+      chrome.storage.local.set({ usageData: usageData }, () => {
+        // Broadcast usage update
+        chrome.runtime.sendMessage({ type: 'usage-updated', usageData: usageData });
+        resolve();
+      });
+    });
+  });
 } 
