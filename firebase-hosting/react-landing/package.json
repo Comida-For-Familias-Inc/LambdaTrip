@@ -1,0 +1,35 @@
+{
+  "name": "landing-pages",
+  "version": "1.0.0",
+  "description": "beautiful landing pages",
+  "main": "index.js",
+  "scripts": {
+    "start:tailwind": "cross-env NODE_ENV=development tailwindcss --postcss -i ./src/tailwind-css/tailwind.css -o ../public/css/tailwind-runtime.css -w",
+    "build:tailwind": "cross-env NODE_ENV=production tailwindcss --postcss -i ./src/tailwind-css/tailwind.css -o ../public/css/tailwind-build.css --minify",
+    "build": "npm run build:tailwind",
+    "build:full": "npm run build:tailwind && cp -rf ./src/apps/traveler/* ../public/",
+    "dev": "npm run start:tailwind"
+  },
+  "keywords": [
+    "landing",
+    "pages",
+    "motion",
+    "design",
+    "websites"
+  ],
+  "author": "Paul",
+  "license": "MIT",
+  "devDependencies": {
+    "chart.js": "^4.4.2",
+    "gsap": "^3.12.5",
+    "prettier": "^3.3.3",
+    "prettier-plugin-tailwindcss": "^0.6.5",
+    "swiper": "^11.1.1",
+    "tailwindcss": "^3.4.17"
+  },
+  "dependencies": {
+    "cross-env": "^10.0.0",
+    "postcss": "^8.4.33",
+    "postcss-simple-vars": "^7.0.1"
+  }
+}

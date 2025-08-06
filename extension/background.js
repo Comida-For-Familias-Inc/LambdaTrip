@@ -10,32 +10,206 @@ const USAGE_WARNING_THRESHOLD = 0.8; // Show warning at 80% of limit
 
 // Create context menu on extension install
 chrome.runtime.onInstalled.addListener(() => {
+  console.log('[background] Extension installed/updated, creating context menu');
+  
   chrome.contextMenus.create({
     id: 'analyzeLandmark',
     title: 'Analyze Landmark with LambdaTrip',
     contexts: ['image']
+  }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('[background] Error creating context menu:', chrome.runtime.lastError);
+    } else {
+      console.log('[background] Context menu created successfully');
+    }
+  });
+});
+
+// Also create context menu on startup (in case onInstalled doesn't fire)
+chrome.runtime.onStartup.addListener(() => {
+  console.log('[background] Extension started, ensuring context menu exists');
+  
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'analyzeLandmark',
+      title: 'Analyze Landmark with LambdaTrip',
+      contexts: ['image']
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[background] Error creating context menu on startup:', chrome.runtime.lastError);
+      } else {
+        console.log('[background] Context menu created successfully on startup');
+      }
+    });
   });
 });
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
+  console.log('[background] Context menu clicked:', info.menuItemId);
+  console.log('[background] Tab info:', tab);
+  console.log('[background] Image URL:', info.srcUrl);
+  
   if (info.menuItemId === 'analyzeLandmark') {
-    // Check usage limit before proceeding
-    checkUsageLimit().then((usageInfo) => {
-      if (usageInfo.canProceed) {
-        chrome.tabs.sendMessage(tab.id, {
-          action: 'analyzeImage',
-          imageUrl: info.srcUrl,
-          usageInfo: usageInfo
+    console.log('[background] Processing analyzeLandmark request');
+    
+    // Check if tab is still valid
+    if (!tab || !tab.id) {
+      console.error('[background] Invalid tab for context menu click');
+      return;
+    }
+    
+    // First, ping the content script to ensure it's ready
+    console.log('[background] Pinging content script in tab:', tab.id);
+    chrome.tabs.sendMessage(tab.id, { action: 'ping' })
+      .then(response => {
+        console.log('[background] Content script ping response:', response);
+        
+        // Content script is alive, proceed with usage check and analysis
+        checkUsageLimit().then((usageInfo) => {
+          console.log('[background] Usage info:', usageInfo);
+          
+          if (usageInfo.canProceed) {
+            console.log('[background] Sending analyzeImage message to tab:', tab.id);
+            chrome.tabs.sendMessage(tab.id, {
+              action: 'analyzeImage_click',
+              imageUrl: info.srcUrl,
+              usageInfo: usageInfo
+            }).then(() => {
+              console.log('[background] Message sent successfully to tab');
+            }).catch(err => {
+              console.error('[background] Error sending message to tab:', err);
+              // Fallback: try to analyze directly
+              console.log('[background] Trying direct analysis as fallback');
+              analyzeLandmarkImage(info.srcUrl).then(result => {
+                console.log('[background] Direct analysis result:', result);
+              }).catch(error => {
+                console.error('[background] Direct analysis failed:', error);
+              });
+            });
+          } else {
+            console.log('[background] Usage limit reached, showing limit message');
+            // Show blocking message
+            chrome.tabs.sendMessage(tab.id, {
+              action: 'showUsageLimit',
+              usageInfo: usageInfo
+            }).then(() => {
+              console.log('[background] Usage limit message sent successfully');
+            }).catch(err => {
+              console.error('[background] Error sending usage limit message:', err);
+            });
+          }
+        }).catch(error => {
+          console.error('[background] Error checking usage limit:', error);
+          // Proceed anyway if usage check fails
+          console.log('[background] Proceeding with analysis despite usage check error');
+          chrome.tabs.sendMessage(tab.id, {
+            action: 'analyzeImage_click',
+            imageUrl: info.srcUrl,
+            usageInfo: { canProceed: true, isPremium: false }
+          }).catch(err => {
+            console.error('[background] Error sending message to tab after usage check failure:', err);
+          });
         });
-      } else {
-        // Show blocking message
-        chrome.tabs.sendMessage(tab.id, {
-          action: 'showUsageLimit',
-          usageInfo: usageInfo
+      })
+      .catch(err => {
+        console.error('[background] Content script ping failed:', err);
+        console.log('[background] Content script not ready, injecting fresh content script');
+        
+        // Content script is not ready, inject it fresh and retry
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content.js']
+        }).then(() => {
+          // Also inject the CSS file
+          return chrome.scripting.insertCSS({
+            target: { tabId: tab.id },
+            files: ['styles.css']
+          });
+        }).then(() => {
+          console.log('[background] Content script injected successfully');
+          
+          // Wait for content script to initialize
+          setTimeout(() => {
+            console.log('[background] Retrying ping after injection');
+            chrome.tabs.sendMessage(tab.id, { action: 'ping' })
+              .then(response => {
+                console.log('[background] Content script ping successful after injection:', response);
+                
+                // Now proceed with the analysis
+                checkUsageLimit().then((usageInfo) => {
+                  console.log('[background] Usage info:', usageInfo);
+                  
+                  if (usageInfo.canProceed) {
+                    console.log('[background] Sending analyzeImage message to tab:', tab.id);
+                    chrome.tabs.sendMessage(tab.id, {
+                      action: 'analyzeImage',
+                      imageUrl: info.srcUrl,
+                      usageInfo: usageInfo
+                    }).then(() => {
+                      console.log('[background] Message sent successfully to tab');
+                    }).catch(err => {
+                      console.error('[background] Error sending message to tab:', err);
+                      // Fallback: try to analyze directly
+                      console.log('[background] Trying direct analysis as fallback');
+                      analyzeLandmarkImage(info.srcUrl).then(result => {
+                        console.log('[background] Direct analysis result:', result);
+                      }).catch(error => {
+                        console.error('[background] Direct analysis failed:', error);
+                      });
+                    });
+                  } else {
+                    console.log('[background] Usage limit reached, showing limit message');
+                    chrome.tabs.sendMessage(tab.id, {
+                      action: 'showUsageLimit',
+                      usageInfo: usageInfo
+                    }).then(() => {
+                      console.log('[background] Usage limit message sent successfully');
+                    }).catch(err => {
+                      console.error('[background] Error sending usage limit message:', err);
+                    });
+                  }
+                }).catch(error => {
+                  console.error('[background] Error checking usage limit:', error);
+                  chrome.tabs.sendMessage(tab.id, {
+                    action: 'analyzeImage',
+                    imageUrl: info.srcUrl,
+                    usageInfo: { canProceed: true, isPremium: false }
+                  }).catch(err => {
+                    console.error('[background] Error sending message to tab after usage check failure:', err);
+                  });
+                });
+              })
+              .catch(pingErr => {
+                console.error('[background] Ping still failed after injection:', pingErr);
+                // Last resort: direct analysis
+                console.log('[background] Trying direct analysis as last resort');
+                checkUsageLimit().then((usageInfo) => {
+                  if (usageInfo.canProceed) {
+                    analyzeLandmarkImage(info.srcUrl).then(result => {
+                      console.log('[background] Direct analysis result:', result);
+                    }).catch(error => {
+                      console.error('[background] Direct analysis failed:', error);
+                    });
+                  }
+                });
+              });
+          }, 500); // Wait 500ms for content script to initialize
+        }).catch(injectErr => {
+          console.error('[background] Failed to inject content script:', injectErr);
+          // Last resort: direct analysis
+          console.log('[background] Trying direct analysis as last resort');
+          checkUsageLimit().then((usageInfo) => {
+            if (usageInfo.canProceed) {
+              analyzeLandmarkImage(info.srcUrl).then(result => {
+                console.log('[background] Direct analysis result:', result);
+              }).catch(error => {
+                console.error('[background] Direct analysis failed:', error);
+              });
+            }
+          });
         });
-      }
-    });
+      });
   }
 });
 
@@ -142,22 +316,41 @@ async function checkFirestoreSubscriptionDirect(userId) {
 
 // Handle messages from content script and popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'analyzeImage') {
+  console.log('[background] Received message:', request);
+  
+  // Handle content script logs
+  if (request.type === 'log') {
+    console.log('[Content script log]', request.message);
+    return;
+  }
+  
+  // Handle content script ready signal
+  if (request.action === 'contentScriptReady') {
+    console.log('[background] Content script ready on:', request.url);
+    sendResponse({ status: 'acknowledged' });
+    return;
+  }
+  
+  if (request.action === 'analyzeImage_content') {
+    console.log('[background] Processing analyzeImage request for:', request.imageUrl);
+    
     // Handle the API call asynchronously
     analyzeLandmarkImage(request.imageUrl)
       .then(result => {
+        console.log('[background] API call successful, sending response to content script');
+        console.log('[background] Response data:', result);
         sendResponse({ success: true, data: result });
+        console.log('[background] Response sent successfully');
       })
       .catch(error => {
-        console.error('LambdaTrip API Error:', error);
+        console.error('[background] API call failed:', error);
+        console.log('[background] Sending error response to content script');
         sendResponse({ success: false, error: error.message });
+        console.log('[background] Error response sent successfully');
       });
     
     // Return true to indicate we will send a response asynchronously
     return true;
-  }
-  if (request.target !== 'background') {
-    return; // Exit early, don't process this message
   }
   // Firebase Auth handlers
   if (request.type === 'firebase-signin-popup') {
@@ -283,7 +476,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // API call function
 async function analyzeLandmarkImage(imageUrl) {
   try {
+    console.log('[background] Starting analyzeLandmarkImage for:', imageUrl);
+    
     // First API call to analyze the image
+    console.log('[background] Making first API call to /analyze-image');
     const imageResponse = await fetch(`${API_BASE_URL}/analyze-image`, {
       method: 'POST',
       headers: {
@@ -294,13 +490,18 @@ async function analyzeLandmarkImage(imageUrl) {
       })
     });
 
+    console.log('[background] First API response status:', imageResponse.status);
+    console.log('[background] First API response ok:', imageResponse.ok);
+
     if (!imageResponse.ok) {
       throw new Error(`Image analysis failed: ${imageResponse.status}`);
     }
 
     const imageData = await imageResponse.json();
+    console.log('[background] First API response data:', imageData);
     
     // Second API call to get landmark analysis
+    console.log('[background] Making second API call to /analyze-landmark');
     const landmarkResponse = await fetch(`${API_BASE_URL}/analyze-landmark`, {
       method: 'POST',
       headers: {
@@ -311,18 +512,36 @@ async function analyzeLandmarkImage(imageUrl) {
       })
     });
 
+    console.log('[background] Second API response status:', landmarkResponse.status);
+    console.log('[background] Second API response ok:', landmarkResponse.ok);
+
     if (!landmarkResponse.ok) {
       throw new Error(`Landmark analysis failed: ${landmarkResponse.status}`);
     }
 
     const landmarkData = await landmarkResponse.json();
+    console.log('[background] Second API response data:', landmarkData);
     
-    // Increment usage count using new tracking system
+    // Increment usage count
+    console.log('[background] Incrementing usage count');
     await incrementUsage();
 
-    return landmarkData;
+    console.log('[background] analyzeLandmarkImage completed successfully');
+    
+    // Return data in the structure expected by content script
+    return {
+      imageAnalysis: {
+        landmark_detected: imageData.landmark_detected,
+        analysis_data: imageData.analysis_data
+      },
+      aiAnalysis: {
+        analysis: landmarkData.analysis,
+        recommendations: landmarkData.recommendations
+      }
+    };
   } catch (error) {
-    console.error('API Error:', error);
+    console.error('[background] Image analysis error:', error);
+    console.error('[background] Error stack:', error.stack);
     throw error;
   }
 } 

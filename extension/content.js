@@ -1,22 +1,22 @@
 // Content script for LambdaTrip Chrome Extension
+chrome.runtime.sendMessage({ type: 'log', message: '[LambdaTrip] Content script loaded on: ' + window.location.href });
+
 let modal = null;
 let isAnalyzing = false;
 
-console.log('LambdaTrip content script loaded');
-
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Content script received message:', request);
-  if (request.action === 'analyzeImage') {
+  chrome.runtime.sendMessage({ type: 'log', message: 'Content script received message: ' + JSON.stringify(request) });
+  if (request.action === 'analyzeImage_click') {
     showAnalysisModal(request.imageUrl, request.usageInfo);
-  }
-  if (request.action === 'showUsageLimit') {
-    showUsageLimitModal(request.usageInfo);
   }
 });
 
+// Log when content script is fully ready
+chrome.runtime.sendMessage({ type: 'log', message: '[LambdaTrip] Content script ready and listening for messages' });
+
 function showAnalysisModal(imageUrl, usageInfo) {
-  console.log('showAnalysisModal called with:', imageUrl, usageInfo);
+  chrome.runtime.sendMessage({ type: 'log', message: 'showAnalysisModal called with: ' + imageUrl + ', ' + JSON.stringify(usageInfo) });
   if (isAnalyzing) return;
   
   isAnalyzing = true;
@@ -26,39 +26,43 @@ function showAnalysisModal(imageUrl, usageInfo) {
     createModal();
   }
   
-  // Show usage warning if applicable
-  if (usageInfo && usageInfo.warning && !usageInfo.isPremium) {
-    showUsageWarning(usageInfo);
-  }
+  // // Show usage warning if applicable
+  // if (usageInfo && usageInfo.warning && !usageInfo.isPremium) {
+  //   showUsageWarning(usageInfo);
+  // }
   
   // Show loading state
   showLoadingState(imageUrl);
   
   // Call background script to analyze image
   try {
-    console.log('Sending message to background script...');
+    chrome.runtime.sendMessage({ type: 'log', message: 'Sending message to background script...' });
     chrome.runtime.sendMessage({
-      action: 'analyzeImage',
+      action: 'analyzeImage_content',
       imageUrl: imageUrl
     }, (response) => {
-      console.log('Received response from background script:', response);
+      chrome.runtime.sendMessage({ type: 'log', message: 'Received response from background script: ' + JSON.stringify(response) });
+      chrome.runtime.sendMessage({ type: 'log', message: 'Response type: ' + typeof response });
+      chrome.runtime.sendMessage({ type: 'log', message: 'Response keys: ' + (response ? Object.keys(response) : 'null/undefined') });
       isAnalyzing = false;
       
       if (chrome.runtime.lastError) {
-        console.error('Extension error:', chrome.runtime.lastError);
+        chrome.runtime.sendMessage({ type: 'log', message: 'Extension error: ' + JSON.stringify(chrome.runtime.lastError) });
         showErrorState('Extension communication error. Please try again.');
         return;
       }
       
       if (response && response.success) {
+        chrome.runtime.sendMessage({ type: 'log', message: 'Response data: ' + JSON.stringify(response.data) });
         showAnalysisResults(response.data, imageUrl);
       } else {
+        chrome.runtime.sendMessage({ type: 'log', message: 'Analysis failed: ' + JSON.stringify(response) });
         showErrorState(response ? response.error : 'Unknown error occurred');
       }
     });
   } catch (error) {
     isAnalyzing = false;
-    console.error('Error sending message:', error);
+    chrome.runtime.sendMessage({ type: 'log', message: 'Error sending message: ' + error.toString() });
     showErrorState('Failed to communicate with extension. Please try again.');
   }
 }
@@ -85,18 +89,22 @@ function createModal() {
   // Add close functionality
   const closeBtn = modal.querySelector('.lambdatrip-close-btn');
   closeBtn.addEventListener('click', () => {
-    modal.classList.remove('lambdatrip-active');
+    closeModal();
   });
   
   // Close on Escape key
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal.classList.contains('lambdatrip-active')) {
-      modal.classList.remove('lambdatrip-active');
+      closeModal();
     }
   });
+  
+  // Make closeModal globally available
+  window.closeModal = closeModal;
 }
 
 function showLoadingState(imageUrl) {
+  chrome.runtime.sendMessage({ type: 'log', message: 'showLoadingState called with imageUrl: ' + imageUrl });
   const modalContent = document.getElementById('lambdatrip-modal-content');
   
   modalContent.innerHTML = `
@@ -120,9 +128,15 @@ function showLoadingState(imageUrl) {
 }
 
 function showAnalysisResults(data, imageUrl) {
+  chrome.runtime.sendMessage({ type: 'log', message: 'showAnalysisResults called with data: ' + JSON.stringify(data) });
+  chrome.runtime.sendMessage({ type: 'log', message: 'showAnalysisResults called with imageUrl: ' + imageUrl });
+  
   const modalContent = document.getElementById('lambdatrip-modal-content');
+  chrome.runtime.sendMessage({ type: 'log', message: 'modalContent element: ' + (modalContent ? 'found' : 'not found') });
   
   const { imageAnalysis, aiAnalysis } = data;
+  chrome.runtime.sendMessage({ type: 'log', message: 'imageAnalysis: ' + JSON.stringify(imageAnalysis) });
+  chrome.runtime.sendMessage({ type: 'log', message: 'aiAnalysis: ' + JSON.stringify(aiAnalysis) });
   
   // Extract landmark data from the correct structure
   const landmarkData = imageAnalysis.analysis_data?.landmark || {};
@@ -265,6 +279,13 @@ function showAnalysisResults(data, imageUrl) {
   analyzedImageWrapper.appendChild(analyzedImg);
 
   modal.classList.add('lambdatrip-active');
+  chrome.runtime.sendMessage({ type: 'log', message: 'Modal activated with lambdatrip-active class' });
+  chrome.runtime.sendMessage({ type: 'log', message: 'Modal classes: ' + modal.className });
+  chrome.runtime.sendMessage({ type: 'log', message: 'Modal style right: ' + window.getComputedStyle(modal).right });
+  chrome.runtime.sendMessage({ type: 'log', message: 'Modal style width: ' + window.getComputedStyle(modal).width });
+  chrome.runtime.sendMessage({ type: 'log', message: 'Modal style height: ' + window.getComputedStyle(modal).height });
+  chrome.runtime.sendMessage({ type: 'log', message: 'Modal style z-index: ' + window.getComputedStyle(modal).zIndex });
+  chrome.runtime.sendMessage({ type: 'log', message: 'Modal style position: ' + window.getComputedStyle(modal).position });
 }
 
 function showErrorState(errorMessage) {
@@ -277,7 +298,7 @@ function showErrorState(errorMessage) {
       </div>
       <h3>Analysis Failed</h3>
       <p>${errorMessage}</p>
-      <button class="retry-btn" onclick="closeModal()">Close</button>
+      <button class="retry-btn" onclick="window.closeModal()">Close</button>
     </div>
   `;
   
@@ -287,62 +308,6 @@ function showErrorState(errorMessage) {
 function closeModal() {
   if (modal) {
     modal.classList.remove('lambdatrip-active');
+    isAnalyzing = false; // Reset analyzing state when modal is closed
   }
 }
-
-function showUsageWarning(usageInfo) {
-  const modalContent = document.getElementById('lambdatrip-modal-content');
-  
-  const warningHtml = `
-    <div class="usage-warning">
-      <div class="warning-icon">⚠️</div>
-      <h3>Usage Limit Warning</h3>
-      <p>You've used ${usageInfo.currentUsage} of ${usageInfo.limit} free analyses this month.</p>
-      <p>Only ${usageInfo.remaining} analyses remaining!</p>
-      <div class="warning-actions">
-        <button class="btn-continue" onclick="continueAnalysis()">Continue Analysis</button>
-        <button class="btn-upgrade" onclick="openUpgradePage()">Upgrade to Premium</button>
-      </div>
-    </div>
-  `;
-  
-  modalContent.innerHTML = warningHtml;
-  modal.classList.add('lambdatrip-active');
-  
-  // Add global functions for buttons
-  window.continueAnalysis = () => {
-    modal.classList.remove('lambdatrip-active');
-    // The analysis will continue automatically
-  };
-  
-  window.openUpgradePage = () => {
-    chrome.tabs.create({ url: 'https://lambdatrip.firebaseapp.com/payment' });
-    modal.classList.remove('lambdatrip-active');
-  };
-}
-
-function showUsageLimitModal(usageInfo) {
-  const modalContent = document.getElementById('lambdatrip-modal-content');
-  
-  const limitHtml = `
-    <div class="usage-limit-reached">
-      <div class="limit-icon">🚫</div>
-      <h3>Monthly Usage Limit Reached</h3>
-      <p>You've reached your limit of ${usageInfo.limit} free analyses this month.</p>
-      <p>Upgrade to Premium for unlimited landmark analysis!</p>
-      <div class="limit-actions">
-        <button class="btn-upgrade-primary" onclick="openUpgradePage()">Upgrade to Premium</button>
-        <button class="btn-close" onclick="closeModal()">Close</button>
-      </div>
-    </div>
-  `;
-  
-  modalContent.innerHTML = limitHtml;
-  modal.classList.add('lambdatrip-active');
-  
-  // Add global function for upgrade button
-  window.openUpgradePage = () => {
-    chrome.tabs.create({ url: 'https://lambdatrip.firebaseapp.com/payment' });
-    modal.classList.remove('lambdatrip-active');
-  };
-} 
