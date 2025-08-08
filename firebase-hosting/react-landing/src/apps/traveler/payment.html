@@ -54,6 +54,13 @@
         <i class="bi bi-google"></i>
         <span class="tw-ml-2">Sign in with Google</span>
       </button>
+
+      <button id="logout-btn"
+        class="btn tw-bg-gray-600 tw-text-white tw-rounded-md tw-px-4 tw-py-2 tw-shadow-lg"
+        style="display:none;">
+        <i class="bi bi-box-arrow-right"></i>
+        <span class="tw-ml-2">Sign out</span>
+      </button>
     </div>
   </header>
 
@@ -157,13 +164,13 @@
           <i class="bi bi-google"></i>
           <span class="tw-ml-2">Sign in with Google</span>
         </button>
-        <button class="btn tw-bg-black tw-text-white tw-rounded-md tw-px-6 tw-py-3"
+        <button class="btn tw-bg-black tw-text-white tw-rounded-md tw-px-6 tw-py-3 hover:tw-scale-x-[1.03]"
                 id="upgrade-btn" onclick="processPayment()">
           <i class="bi bi-send-fill"></i>
           <span class="tw-ml-2">Upgrade Now</span>
         </button>
-        <button class="btn tw-bg-gray-600 tw-text-white tw-rounded-md tw-px-6 tw-py-3"
-        onclick="window.location.assign('https://lambdatrip.web.app/')">
+        <button class="btn tw-bg-gray-600 tw-text-white tw-rounded-md tw-px-6 tw-py-3 hover:tw-scale-x-[1.03]"
+                id="cancel-btn" onclick="window.location.assign('https://lambdatrip.web.app/')">
           Cancel
         </button>
       </div>
@@ -200,13 +207,17 @@
     // Show/hide sign-in button based on auth state
     auth.onAuthStateChanged((user) => {
       const signInBtn = document.getElementById('google-signin');
+      const logoutBtn = document.getElementById('logout-btn');
       const upgradeBtn = document.getElementById('upgrade-btn');
+
       if (!user) {
         signInBtn.style.display = 'block';
+        logoutBtn.style.display = 'none';
         upgradeBtn.disabled = true;
         upgradeBtn.classList.add('tw-opacity-50', 'tw-cursor-not-allowed');
       } else {
         signInBtn.style.display = 'none';
+        logoutBtn.style.display = 'block';
         upgradeBtn.disabled = false;
         upgradeBtn.classList.remove('tw-opacity-50', 'tw-cursor-not-allowed');
       }
@@ -215,6 +226,16 @@
     document.getElementById('google-signin').onclick = function() {
       const provider = new firebase.auth.GoogleAuthProvider();
       auth.signInWithPopup(provider);
+    };
+
+    document.getElementById('logout-btn').onclick = async function () {
+      try {
+        await auth.signOut();
+        // Optional: redirect after logout
+        // window.location.assign('https://lambdatrip.web.app/');
+      } catch (e) {
+        alert('Sign out failed: ' + e.message);
+      }
     };
 
     async function processPayment() {
