@@ -644,6 +644,14 @@ video {
   top: 1rem;
 }
 
+.tw-left-1\/2 {
+  left: 50%;
+}
+
+.tw-top-1\/2 {
+  top: 50%;
+}
+
 .tw-z-10 {
   z-index: 10;
 }
@@ -744,6 +752,10 @@ video {
 
 .tw-mb-10 {
   margin-bottom: 2.5rem;
+}
+
+.tw-ml-10 {
+  margin-left: 2.5rem;
 }
 
 .tw-block {
@@ -987,6 +999,16 @@ video {
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 
+.tw--translate-x-1\/2 {
+  --tw-translate-x: -50%;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
+.tw--translate-y-1\/2 {
+  --tw-translate-y: -50%;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
 .tw-scale-105 {
   --tw-scale-x: 1.05;
   --tw-scale-y: 1.05;
@@ -995,6 +1017,10 @@ video {
 
 .tw-transform {
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
+.tw-cursor-pointer {
+  cursor: pointer;
 }
 
 .tw-select-none {
@@ -1253,6 +1279,10 @@ video {
   --tw-bg-opacity: 0;
 }
 
+.tw-bg-opacity-70 {
+  --tw-bg-opacity: 0.7;
+}
+
 .tw-bg-gradient-to-br {
   background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
 }
@@ -1342,6 +1372,11 @@ video {
 .tw-py-3 {
   padding-top: 0.75rem;
   padding-bottom: 0.75rem;
+}
+
+.tw-px-\[30\%\] {
+  padding-left: 30%;
+  padding-right: 30%;
 }
 
 .tw-text-center {
@@ -1511,6 +1546,12 @@ video {
   transition-duration: 150ms;
 }
 
+.tw-transition-opacity {
+  transition-property: opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
 .tw-duration-\[0\.3s\] {
   transition-duration: 0.3s;
 }
@@ -1578,6 +1619,10 @@ video {
 .hover\:tw-bg-purple-700:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(126 34 206 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:tw-bg-opacity-80:hover {
+  --tw-bg-opacity: 0.8;
 }
 
 .hover\:\!tw-text-black:hover {

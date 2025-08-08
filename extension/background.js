@@ -59,157 +59,51 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       return;
     }
     
-    // First, ping the content script to ensure it's ready
-    console.log('[background] Pinging content script in tab:', tab.id);
-    chrome.tabs.sendMessage(tab.id, { action: 'ping' })
-      .then(response => {
-        console.log('[background] Content script ping response:', response);
-        
-        // Content script is alive, proceed with usage check and analysis
-        checkUsageLimit().then((usageInfo) => {
-          console.log('[background] Usage info:', usageInfo);
-          
-          if (usageInfo.canProceed) {
-            console.log('[background] Sending analyzeImage message to tab:', tab.id);
-            chrome.tabs.sendMessage(tab.id, {
-              action: 'analyzeImage_click',
-              imageUrl: info.srcUrl,
-              usageInfo: usageInfo
-            }).then(() => {
-              console.log('[background] Message sent successfully to tab');
-            }).catch(err => {
-              console.error('[background] Error sending message to tab:', err);
-              // Fallback: try to analyze directly
-              console.log('[background] Trying direct analysis as fallback');
-              analyzeLandmarkImage(info.srcUrl).then(result => {
-                console.log('[background] Direct analysis result:', result);
-              }).catch(error => {
-                console.error('[background] Direct analysis failed:', error);
-              });
-            });
-          } else {
-            console.log('[background] Usage limit reached, showing limit message');
-            // Show blocking message
-            chrome.tabs.sendMessage(tab.id, {
-              action: 'showUsageLimit',
-              usageInfo: usageInfo
-            }).then(() => {
-              console.log('[background] Usage limit message sent successfully');
-            }).catch(err => {
-              console.error('[background] Error sending usage limit message:', err);
-            });
-          }
-        }).catch(error => {
-          console.error('[background] Error checking usage limit:', error);
-          // Proceed anyway if usage check fails
-          console.log('[background] Proceeding with analysis despite usage check error');
-          chrome.tabs.sendMessage(tab.id, {
-            action: 'analyzeImage_click',
-            imageUrl: info.srcUrl,
-            usageInfo: { canProceed: true, isPremium: false }
-          }).catch(err => {
-            console.error('[background] Error sending message to tab after usage check failure:', err);
+    // Proceed directly with usage check and analysis
+    checkUsageLimit().then((usageInfo) => {
+      console.log('[background] Usage info:', usageInfo);
+      
+      if (usageInfo.canProceed) {
+        console.log('[background] Sending analyzeImage message to tab:', tab.id);
+        sendMessageWithInjection(tab.id, {
+          action: 'analyzeImage_click',
+          imageUrl: info.srcUrl,
+          usageInfo: usageInfo
+        }).then(() => {
+          console.log('[background] Message sent successfully to tab');
+        }).catch(err => {
+          console.error('[background] Error sending message to tab:', err);
+          // Fallback: direct analysis
+          analyzeLandmarkImage(info.srcUrl).then(result => {
+            console.log('[background] Direct analysis result:', result);
+          }).catch(error => {
+            console.error('[background] Direct analysis failed:', error);
           });
         });
-      })
-      .catch(err => {
-        console.error('[background] Content script ping failed:', err);
-        console.log('[background] Content script not ready, injecting fresh content script');
-        
-        // Content script is not ready, inject it fresh and retry
-        chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          files: ['content.js']
+      } else {
+        console.log('[background] Usage limit reached, showing limit message');
+        // Show blocking message
+        sendMessageWithInjection(tab.id, {
+          action: 'showUsageLimit',
+          usageInfo: usageInfo
         }).then(() => {
-          // Also inject the CSS file
-          return chrome.scripting.insertCSS({
-            target: { tabId: tab.id },
-            files: ['styles.css']
-          });
-        }).then(() => {
-          console.log('[background] Content script injected successfully');
-          
-          // Wait for content script to initialize
-          setTimeout(() => {
-            console.log('[background] Retrying ping after injection');
-            chrome.tabs.sendMessage(tab.id, { action: 'ping' })
-              .then(response => {
-                console.log('[background] Content script ping successful after injection:', response);
-                
-                // Now proceed with the analysis
-                checkUsageLimit().then((usageInfo) => {
-                  console.log('[background] Usage info:', usageInfo);
-                  
-                  if (usageInfo.canProceed) {
-                    console.log('[background] Sending analyzeImage message to tab:', tab.id);
-                    chrome.tabs.sendMessage(tab.id, {
-                      action: 'analyzeImage',
-                      imageUrl: info.srcUrl,
-                      usageInfo: usageInfo
-                    }).then(() => {
-                      console.log('[background] Message sent successfully to tab');
-                    }).catch(err => {
-                      console.error('[background] Error sending message to tab:', err);
-                      // Fallback: try to analyze directly
-                      console.log('[background] Trying direct analysis as fallback');
-                      analyzeLandmarkImage(info.srcUrl).then(result => {
-                        console.log('[background] Direct analysis result:', result);
-                      }).catch(error => {
-                        console.error('[background] Direct analysis failed:', error);
-                      });
-                    });
-                  } else {
-                    console.log('[background] Usage limit reached, showing limit message');
-                    chrome.tabs.sendMessage(tab.id, {
-                      action: 'showUsageLimit',
-                      usageInfo: usageInfo
-                    }).then(() => {
-                      console.log('[background] Usage limit message sent successfully');
-                    }).catch(err => {
-                      console.error('[background] Error sending usage limit message:', err);
-                    });
-                  }
-                }).catch(error => {
-                  console.error('[background] Error checking usage limit:', error);
-                  chrome.tabs.sendMessage(tab.id, {
-                    action: 'analyzeImage',
-                    imageUrl: info.srcUrl,
-                    usageInfo: { canProceed: true, isPremium: false }
-                  }).catch(err => {
-                    console.error('[background] Error sending message to tab after usage check failure:', err);
-                  });
-                });
-              })
-              .catch(pingErr => {
-                console.error('[background] Ping still failed after injection:', pingErr);
-                // Last resort: direct analysis
-                console.log('[background] Trying direct analysis as last resort');
-                checkUsageLimit().then((usageInfo) => {
-                  if (usageInfo.canProceed) {
-                    analyzeLandmarkImage(info.srcUrl).then(result => {
-                      console.log('[background] Direct analysis result:', result);
-                    }).catch(error => {
-                      console.error('[background] Direct analysis failed:', error);
-                    });
-                  }
-                });
-              });
-          }, 500); // Wait 500ms for content script to initialize
-        }).catch(injectErr => {
-          console.error('[background] Failed to inject content script:', injectErr);
-          // Last resort: direct analysis
-          console.log('[background] Trying direct analysis as last resort');
-          checkUsageLimit().then((usageInfo) => {
-            if (usageInfo.canProceed) {
-              analyzeLandmarkImage(info.srcUrl).then(result => {
-                console.log('[background] Direct analysis result:', result);
-              }).catch(error => {
-                console.error('[background] Direct analysis failed:', error);
-              });
-            }
-          });
+          console.log('[background] Usage limit message sent successfully');
+        }).catch(err => {
+          console.error('[background] Error sending usage limit message:', err);
         });
+      }
+    }).catch(error => {
+      console.error('[background] Error checking usage limit:', error);
+      // Proceed anyway if usage check fails
+      console.log('[background] Proceeding with analysis despite usage check error');
+      sendMessageWithInjection(tab.id, {
+        action: 'analyzeImage_click',
+        imageUrl: info.srcUrl,
+        usageInfo: { canProceed: true, isPremium: false }
+      }).catch(err => {
+        console.error('[background] Error sending message to tab after usage check failure:', err);
       });
+        });
   }
 });
 
@@ -620,4 +514,25 @@ async function incrementUsage() {
       });
     });
   });
+} 
+
+async function delay(ms) {
+  return new Promise((res) => setTimeout(res, ms));
+}
+
+async function sendMessageWithInjection(tabId, message) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch (err) {
+    if (String(err?.message || '').includes('asynchronous response')) {
+      // The listener returned true but didn’t call sendResponse; message still delivered.
+      console.warn('[background] Ignoring benign async-response error.');
+      return; // treat as success; do not inject/retry
+    }
+    // Real failure: inject then retry
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] }).catch(()=>{});
+    await chrome.scripting.insertCSS({ target: { tabId }, files: ['styles.css'] }).catch(()=>{});
+    await new Promise(r => setTimeout(r, 100));
+    return chrome.tabs.sendMessage(tabId, message);
+  }
 } 

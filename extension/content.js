@@ -9,7 +9,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   chrome.runtime.sendMessage({ type: 'log', message: 'Content script received message: ' + JSON.stringify(request) });
   if (request.action === 'analyzeImage_click') {
     showAnalysisModal(request.imageUrl, request.usageInfo);
+    sendResponse({ ack: true }); // immediate ack
+    return; // NOT return true
   }
+  sendResponse({ ack: true });
 });
 
 // Log when content script is fully ready
