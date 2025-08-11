@@ -26,7 +26,7 @@ GOOGLE_WEATHER_URL = "https://weather.googleapis.com/v1/currentConditions:lookup
 RESTCOUNTRIES_BASE_URL = "https://restcountries.com/v3.1"
 SMART_TRAVELLER_BASE_URL = "https://smartraveller.kevle.xyz/api/"
 
-# near other config
+# Maps.co Geocoding API configuration
 GEOCODE_API_KEY = os.getenv("GEOCODE_API_KEY")
 
 def geocode_city_country(query: str) -> Dict[str, Optional[str]]:
