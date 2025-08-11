@@ -30,7 +30,6 @@ function sendToIframe(message) {
     const id = ++messageId;
     pendingResolvers[id] = resolve;
     message._messageId = id;
-    console.log('[offscreen] Sending message to iframe:', message);
     iframe.contentWindow.postMessage(message, '*');
   });
 }
@@ -39,24 +38,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.target !== 'offscreen') {
     return; // Exit early, don't process this message
   }
-  console.log('[offscreen] Received message from background:', request);
   if (request.type === 'firebase-signin-bg') {
     sendToIframe({ initAuth: true }).then((result) => {
-      console.log('[offscreen] Result from iframe (initAuth):', result);
       sendResponse(result);
     });
     return true;
   }
   if (request.type === 'check-firestore-subscription-bg' && request.userId) {
     sendToIframe({ checkSubscription: true, userId: request.userId }).then((result) => {
-      console.log('[offscreen] Result from iframe (checkSubscription):', result);
       sendResponse(result);
     });
     return true;
   }
   if (request.type === 'firebase-signout-bg') {
     sendToIframe({ signOut: true }).then((result) => {
-      console.log('[offscreen] Result from iframe (signOut):', result);
       sendResponse(result);
     });
     return true;

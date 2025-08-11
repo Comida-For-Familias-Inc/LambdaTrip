@@ -22,7 +22,6 @@ const USAGE_QUOTA = 30; // Example quota, change as needed
 
 // Update UI for premium user
 function updateUIForPremiumUser() {
-  console.log('[popup] Updating UI for premium user');
   if (usageInfo) {
     usageInfo.innerHTML = `
       <div class="premium-status">
@@ -46,7 +45,6 @@ function updateUIForPremiumUser() {
 
 // Update UI for free user
 function updateUIForFreeUser() {
-  console.log('[popup] Updating UI for free user');
   if (usageInfo) {
     usageInfo.innerHTML = `
       <div class="usage-limit">
@@ -115,7 +113,6 @@ function fetchUsageCount() {
 
 // Update UI for signed-in user
 function updateUIForSignedInUser(user) {
-  console.log('[popup] Updating UI for signed-in user');
   if (signInButton) signInButton.style.display = 'none';
   const signOutButton = document.getElementById('google-signout');
   if (signOutButton) signOutButton.classList.remove('hidden');
@@ -149,7 +146,6 @@ function updateUIForSignedInUser(user) {
 
 // Update UI for signed-out user
 function updateUIForSignedOutUser() {
-  console.log('[popup] Updating UI for signed-out user');
   if (signInButton) signInButton.style.display = 'block';
   const signOutButton = document.getElementById('google-signout');
   if (signOutButton) signOutButton.classList.add('hidden');
@@ -188,10 +184,8 @@ if (signInButton) {
   signInButton.addEventListener('click', () => {
     if (signInButton.disabled) return; // Prevent double click
     signInButton.disabled = true;
-    console.log('[popup] Sign-in button disabled');
     chrome.runtime.sendMessage({ target: 'background', type: 'firebase-signin-popup' }, (response) => {
       signInButton.disabled = false;
-      console.log('[popup] Sign-in button enabled');
       if (response && response.success) {
         // Do not call checkAuthState();
         // UI will update via auth-state-changed event
@@ -227,7 +221,7 @@ if (upgradeButton) {
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'auth-state-changed') {
-    console.log('[popup] Received auth-state-changed:', request);
+
     if (request.user) {
       updateUIForSignedInUser(request.user);
     } else {
@@ -236,7 +230,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'subscription-status-changed') {
-    console.log('[popup] Received subscription-status-changed:', request);
     if (request.isPremium) {
       updateUIForPremiumUser();
     } else {
@@ -245,7 +238,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'usage-updated') {
-    console.log('[popup] Received usage-updated:', request);
     fetchUsageCount();
   }
   
@@ -253,6 +245,5 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 }); 
 
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('[popup] DOMContentLoaded');
   checkAuthState();
 }); 

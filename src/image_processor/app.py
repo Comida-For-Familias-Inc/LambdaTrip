@@ -5,9 +5,10 @@ import os
 import requests
 from datetime import datetime
 from urllib.parse import urlparse
+from typing import Dict, Optional
 
 # Import shared utilities
-from shared.api_helpers import get_weather, get_country_info, get_travel_advisory
+from shared.api_helpers import get_weather, get_country_info, geocode_city_country
 
 # Configure logging
 logger = logging.getLogger()
@@ -15,6 +16,7 @@ logger.setLevel(logging.INFO)
 
 # Google Vision API configuration
 GOOGLE_VISION_API_KEY = os.getenv("GOOGLE_VISION_API_KEY")
+GEOCODE_API_KEY = os.getenv("GEOCODE_API_KEY")
 GOOGLE_VISION_URL = "https://vision.googleapis.com/v1/images:annotate"
 
 def lambda_handler(event, context):
@@ -82,12 +84,7 @@ def lambda_handler(event, context):
         if location.get('country'):
             country_info = get_country_info(location['country'])
         
-        # Step 4: Get travel advisory
-        travel_advisory = None
-        if location.get('country'):
-            travel_advisory = get_travel_advisory(location['country'])
-        
-        # Step 5: Prepare result for Bedrock analysis
+        # Step 4: Prepare result for Bedrock analysis
         analysis_data = {
             "landmark": {
                 "name": landmark_name,
@@ -97,11 +94,10 @@ def lambda_handler(event, context):
             },
             "weather": weather_info,
             "country_info": country_info,
-            "travel_advisory": travel_advisory,
             "image_url": image_url
         }
         
-        # Step 6: Store intermediate result in S3
+        # Step 5: Store intermediate result in S3
         result_key = f"landmark_analysis/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_analysis.json"
         
         # Skip S3 operations in local/development environment
@@ -208,8 +204,10 @@ def analyze_image_with_vision(image_url, api_key):
                     # Try to extract city/country from landmark name
                     # This is a simple heuristic - in production you might use geocoding
                     if landmark_info["name"]:
-                        landmark_info["location"]["city"] = extract_city_from_landmark(landmark_info["name"])
-                        landmark_info["location"]["country"] = extract_country_from_landmark(landmark_info["name"])
+                        city, country, country_code = extract_info_from_landmark(landmark_info["name"])
+                        landmark_info["location"]["city"] = city
+                        landmark_info["location"]["country"] = country
+                        landmark_info["location"]["country_code"] = country_code
                     
                     landmarks.append(landmark_info)
             
@@ -234,67 +232,9 @@ def analyze_image_with_vision(image_url, api_key):
         logger.error(f"Unexpected error in Vision API: {str(e)}")
         return None
 
-def extract_city_from_landmark(landmark_name):
-    """
-    Simple heuristic to extract city from landmark name
-    """
-    # Common landmark to city mappings
-    landmark_cities = {
-        "eiffel tower": "Paris",
-        "tower bridge": "London",
-        "big ben": "London",
-        "statue of liberty": "New York",
-        "taj mahal": "Agra",
-        "sydney opera house": "Sydney",
-        "christ the redeemer": "Rio de Janeiro",
-        "machu picchu": "Cusco",
-        "petra": "Petra",
-        "great wall": "Beijing",
-        "colosseum": "Rome",
-        "acropolis": "Athens",
-        "sagrada familia": "Barcelona",
-        "brandenburg gate": "Berlin",
-        "mount fuji": "Tokyo",
-        "angkor wat": "Siem Reap"
-    }
-    
-    landmark_lower = landmark_name.lower()
-    for landmark, city in landmark_cities.items():
-        if landmark in landmark_lower:
-            return city
-    
-    return None
-
-def extract_country_from_landmark(landmark_name):
-    """
-    Simple heuristic to extract country from landmark name
-    """
-    # Common landmark to country mappings
-    landmark_countries = {
-        "eiffel tower": "France",
-        "tower bridge": "UK",
-        "big ben": "UK",
-        "statue of liberty": "USA",
-        "taj mahal": "India",
-        "sydney opera house": "Australia",
-        "christ the redeemer": "Brazil",
-        "machu picchu": "Peru",
-        "petra": "Jordan",
-        "great wall": "China",
-        "colosseum": "Italy",
-        "acropolis": "Greece",
-        "sagrada familia": "Spain",
-        "brandenburg gate": "Germany",
-        "mount fuji": "Japan",
-        "angkor wat": "Cambodia"
-    }
-    
-    landmark_lower = landmark_name.lower()
-    for landmark, country in landmark_countries.items():
-        if landmark in landmark_lower:
-            return country
-    
-    return None
+def extract_info_from_landmark(landmark_name):
+    result = geocode_city_country(landmark_name)
+    return result.get("city"), result.get("country"), result.get("country_code")
 
 def extract_location_from_labels(labels):
     """

@@ -10,38 +10,97 @@ const USAGE_WARNING_THRESHOLD = 0.8; // Show warning at 80% of limit
 
 // Create context menu on extension install
 chrome.runtime.onInstalled.addListener(() => {
+  
   chrome.contextMenus.create({
     id: 'analyzeLandmark',
     title: 'Analyze Landmark with LambdaTrip',
     contexts: ['image']
+  }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('[background] Error creating context menu:', chrome.runtime.lastError);
+    } else {
+      console.log('[background] Context menu created successfully');
+    }
+  });
+});
+
+// Also create context menu on startup (in case onInstalled doesn't fire)
+chrome.runtime.onStartup.addListener(() => {
+  
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'analyzeLandmark',
+      title: 'Analyze Landmark with LambdaTrip',
+      contexts: ['image']
+    }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('[background] Error creating context menu on startup:', chrome.runtime.lastError);
+      } else {
+        console.log('[background] Context menu created successfully on startup');
+      }
+    });
   });
 });
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
+  
   if (info.menuItemId === 'analyzeLandmark') {
-    // Check usage limit before proceeding
+    
+    // Check if tab is still valid
+    if (!tab || !tab.id) {
+      console.error('[background] Invalid tab for context menu click');
+      return;
+    }
+    
+    // Proceed directly with usage check and analysis
     checkUsageLimit().then((usageInfo) => {
+      
       if (usageInfo.canProceed) {
-        chrome.tabs.sendMessage(tab.id, {
-          action: 'analyzeImage',
+        sendMessageWithInjection(tab.id, {
+          action: 'analyzeImage_click',
           imageUrl: info.srcUrl,
           usageInfo: usageInfo
+        }).then(() => {
+          console.log('[background] Message sent successfully to tab');
+        }).catch(err => {
+          console.error('[background] Error sending message to tab:', err);
+          // Fallback: direct analysis
+          analyzeLandmarkImage(info.srcUrl).then(result => {
+            console.log('[background] Direct analysis result:', result);
+          }).catch(error => {
+            console.error('[background] Direct analysis failed:', error);
+          });
         });
       } else {
+        console.log('[background] Usage limit reached, showing limit message');
         // Show blocking message
-        chrome.tabs.sendMessage(tab.id, {
+        sendMessageWithInjection(tab.id, {
           action: 'showUsageLimit',
           usageInfo: usageInfo
+        }).then(() => {
+          console.log('[background] Usage limit message sent successfully');
+        }).catch(err => {
+          console.error('[background] Error sending usage limit message:', err);
         });
       }
-    });
+    }).catch(error => {
+      console.error('[background] Error checking usage limit:', error);
+      // Proceed anyway if usage check fails
+      console.log('[background] Proceeding with analysis despite usage check error');
+      sendMessageWithInjection(tab.id, {
+        action: 'analyzeImage_click',
+        imageUrl: info.srcUrl,
+        usageInfo: { canProceed: true, isPremium: false }
+      }).catch(err => {
+        console.error('[background] Error sending message to tab after usage check failure:', err);
+      });
+        });
   }
 });
 
 // Firebase Auth functions
 async function getAuthFromOffscreen() {
-  console.log('[background] getAuthFromOffscreen called');
   return new Promise(async (resolve, reject) => {
     try {
       // Use the new check here
@@ -61,7 +120,7 @@ async function getAuthFromOffscreen() {
         target: 'offscreen',
         type: 'firebase-signin-bg'
       }).then(response => {
-        console.log('[background] Received response from offscreen for firebase-signin:', response);
+        console.log('[background] Received response   from offscreen for firebase-signin:', response);
         if (response && response.user) {
           resolve(response.user);
         } else {
@@ -119,7 +178,6 @@ async function checkFirestoreSubscriptionDirect(userId) {
           reasons: ['IFRAME_SCRIPTING'],
           justification: 'Firebase Firestore requires an offscreen document'
         });
-        console.log('[background] Offscreen document created for Firestore subscription check');
       } else {
         console.log('[background] Offscreen document already exists for Firestore subscription check');
       }
@@ -142,33 +200,44 @@ async function checkFirestoreSubscriptionDirect(userId) {
 
 // Handle messages from content script and popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'analyzeImage') {
+  
+  // Handle content script logs
+  if (request.type === 'log') {
+    console.log('[Content script log]', request.message);
+    return;
+  }
+  
+  // Handle content script ready signal
+  if (request.action === 'contentScriptReady') {
+    console.log('[background] Content script ready on:', request.url);
+    sendResponse({ status: 'acknowledged' });
+    return;
+  }
+  
+  if (request.action === 'analyzeImage_content') {
+    console.log('[background] Processing analyzeImage request for:', request.imageUrl);
+    
     // Handle the API call asynchronously
     analyzeLandmarkImage(request.imageUrl)
       .then(result => {
+        console.log('[background] API call successful, sending response to content script');
         sendResponse({ success: true, data: result });
       })
       .catch(error => {
-        console.error('LambdaTrip API Error:', error);
+        console.error('[background] API call failed:', error);
         sendResponse({ success: false, error: error.message });
       });
     
     // Return true to indicate we will send a response asynchronously
     return true;
   }
-  if (request.target !== 'background') {
-    return; // Exit early, don't process this message
-  }
   // Firebase Auth handlers
   if (request.type === 'firebase-signin-popup') {
-    console.log('[background] Received firebase-signin request');
     getAuthFromOffscreen()
       .then(user => {
-        console.log('[background] getAuthFromOffscreen result:', user);
         if (user && user.uid) {
           // Store user data in Chrome storage
           chrome.storage.local.set({user: user}, () => {
-            console.log('[background] User stored in chrome.storage.local:', user);
             sendResponse({success: true, user: user});
             // Broadcast auth state changed
             chrome.runtime.sendMessage({ type: 'auth-state-changed', user: user });
@@ -186,7 +255,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'firebase-signout-popup') {
-    console.log('[background] Received firebase-signout request');
     // First, call Firebase Auth signOut via offscreen document
     chrome.runtime.sendMessage({
       target: 'offscreen',
@@ -194,7 +262,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }).then(() => {
       // Then remove user data from Chrome storage
       chrome.storage.local.remove(['user', 'lastSubscriptionCheck'], () => {
-        console.log('[background] User removed from chrome.storage.local');
         sendResponse({success: true});
         // Broadcast auth state changed
         chrome.runtime.sendMessage({ type: 'auth-state-changed', user: null });
@@ -211,7 +278,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'firebase-auth-state-popup') {
-    console.log('[background] Received firebase-auth-state request');
     checkAuthStateFromStorage()
       .then(result => {
         sendResponse(result);
@@ -283,6 +349,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // API call function
 async function analyzeLandmarkImage(imageUrl) {
   try {
+    
     // First API call to analyze the image
     const imageResponse = await fetch(`${API_BASE_URL}/analyze-image`, {
       method: 'POST',
@@ -298,7 +365,7 @@ async function analyzeLandmarkImage(imageUrl) {
       throw new Error(`Image analysis failed: ${imageResponse.status}`);
     }
 
-    const imageData = await imageResponse.json();
+    const imageData = await imageResponse.json();  
     
     // Second API call to get landmark analysis
     const landmarkResponse = await fetch(`${API_BASE_URL}/analyze-landmark`, {
@@ -307,7 +374,7 @@ async function analyzeLandmarkImage(imageUrl) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        analysis_data: imageData
+        analysis_data: imageData.analysis_data
       })
     });
 
@@ -317,12 +384,22 @@ async function analyzeLandmarkImage(imageUrl) {
 
     const landmarkData = await landmarkResponse.json();
     
-    // Increment usage count using new tracking system
+    // Increment usage count
     await incrementUsage();
 
-    return landmarkData;
+    // Return data in the structure expected by content script
+    return {
+      imageAnalysis: {
+        landmark_detected: imageData.landmark_detected,
+        analysis_data: imageData.analysis_data
+      },
+      aiAnalysis: {
+        analysis: landmarkData.analysis,
+        recommendations: landmarkData.recommendations
+      }
+    };
   } catch (error) {
-    console.error('API Error:', error);
+    console.error('[background] Image analysis error:', error);
     throw error;
   }
 } 
@@ -401,4 +478,25 @@ async function incrementUsage() {
       });
     });
   });
+} 
+
+async function delay(ms) {
+  return new Promise((res) => setTimeout(res, ms));
+}
+
+async function sendMessageWithInjection(tabId, message) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch (err) {
+    if (String(err?.message || '').includes('asynchronous response')) {
+      // The listener returned true but didn’t call sendResponse; message still delivered.
+      console.warn('[background] Ignoring benign async-response error.');
+      return; // treat as success; do not inject/retry
+    }
+    // Real failure: inject then retry
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] }).catch(()=>{});
+    await chrome.scripting.insertCSS({ target: { tabId }, files: ['styles.css'] }).catch(()=>{});
+    await new Promise(r => setTimeout(r, 100));
+    return chrome.tabs.sendMessage(tabId, message);
+  }
 } 
