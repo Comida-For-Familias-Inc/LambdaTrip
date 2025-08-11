@@ -150,7 +150,7 @@ function showAnalysisResults(data, imageUrl) {
   // Extract additional data
   const weather = imageAnalysis.analysis_data?.weather;
   const countryInfo = imageAnalysis.analysis_data?.country_info;
-  const travelAdvisory = imageAnalysis.analysis_data?.travel_advisory;
+  const travelAdvisory = aiAnalysis?.analysis?.travel_advisory;
   
   // Format location string
   let locationString = '';
@@ -216,6 +216,14 @@ function showAnalysisResults(data, imageUrl) {
         <div class="advisory-info">
           <p><strong>Level:</strong> ${travelAdvisory.level || 'N/A'}</p>
           <p><strong>Summary:</strong> ${travelAdvisory.summary || 'N/A'}</p>
+          ${travelAdvisory.recommendations && travelAdvisory.recommendations.length > 0 ? `
+          <div class="advisory-recommendations">
+            <p><strong>Recommendations:</strong></p>
+            <ul>
+              ${travelAdvisory.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+            </ul>
+          </div>
+          ` : ''}
         </div>
       </div>
       ` : ''}

@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from datetime import datetime
+import re
 
 # Configure logging
 logger = logging.getLogger()
@@ -88,7 +89,7 @@ def lambda_handler(event, context):
             "landmark": analysis_data.get('landmark', {}),
             "weather": analysis_data.get('weather', {}),
             "country_info": analysis_data.get('country_info', {}),
-            "travel_advisory": analysis_data.get('travel_advisory', {}),
+            "travel_advisory": travel_analysis.get('travel_advisory', {}),
             "analysis": travel_analysis,
             "recommendations": recommendations,
             "image_url": analysis_data.get('image_url', ''),
@@ -157,12 +158,10 @@ def analyze_with_bedrock(analysis_data):
         
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 2000,
+            "system": "Respond with only valid JSON. No code fences, no explanations, no trailing commas.",
+            "max_tokens": 3000,
             "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
+                { "role": "user", "content": prompt }
             ]
         }
         
@@ -184,7 +183,15 @@ def analyze_with_bedrock(analysis_data):
         return {
             "summary": "Unable to generate AI analysis due to technical issues",
             "insights": [],
-            "travel_tips": []
+            "travel_tips": [],
+            "best_visit_time": "Check weather data for optimal timing",
+            "safety_rating": "3 - Moderate",
+            "cultural_highlights": "See country information for cultural context",
+            "travel_advisory": {
+                "level": "Exercise normal precautions",
+                "summary": "Travel advisory information unavailable due to technical issues",
+                "recommendations": []
+            }
         }
 
 def create_analysis_prompt(analysis_data):
@@ -194,7 +201,6 @@ def create_analysis_prompt(analysis_data):
     landmark = analysis_data.get('landmark', {})
     weather = analysis_data.get('weather', {})
     country_info = analysis_data.get('country_info', {})
-    travel_advisory = analysis_data.get('travel_advisory', {})
     
     prompt = f"""
 You are a travel expert analyzing a landmark for a traveler. Please provide a comprehensive analysis based on the following data:
@@ -210,9 +216,6 @@ You are a travel expert analyzing a landmark for a traveler. Please provide a co
 
 **COUNTRY INFORMATION:**
 {json.dumps(country_info, indent=2) if country_info else 'No country data available'}
-
-**TRAVEL ADVISORY:**
-{json.dumps(travel_advisory, indent=2) if travel_advisory else 'No travel advisory data available'}
 
 Please provide your analysis in the following JSON format:
 
@@ -232,48 +235,45 @@ Please provide your analysis in the following JSON format:
     ],
     "best_visit_time": "Recommendation for best time to visit",
     "safety_rating": "1-5 rating with brief explanation",
-    "cultural_highlights": "Key cultural aspects to know about"
+    "cultural_highlights": "Key cultural aspects to know about",
+    "travel_advisory": {{
+        "level": "Travel safety level (e.g., Exercise normal precautions, Exercise increased caution, etc.)",
+        "summary": "Brief travel safety summary for the country",
+        "recommendations": ["Safety recommendation 1", "Safety recommendation 2"]
+    }}
 }}
 
-Focus on providing actionable, practical advice for travelers. Consider weather conditions, cultural context, and safety information in your recommendations.
+Focus on providing actionable, practical advice for travelers. Consider weather conditions, cultural context, and safety information in your recommendations. Generate appropriate travel advisory information based on the country and current global conditions.
 """
     
     return prompt
 
+
 def parse_bedrock_response(response_text):
-    """
-    Parse Bedrock response into structured format
-    """
     try:
-        # Try to extract JSON from the response
-        start_idx = response_text.find('{')
-        end_idx = response_text.rfind('}') + 1
-        
-        if start_idx != -1 and end_idx != 0:
-            json_str = response_text[start_idx:end_idx]
-            parsed = json.loads(json_str)
-            return parsed
-        else:
-            # Fallback: create structured response from text
-            return {
-                "summary": response_text[:200] + "..." if len(response_text) > 200 else response_text,
-                "insights": ["Analysis completed successfully"],
-                "travel_tips": ["Review the full analysis for detailed recommendations"],
-                "best_visit_time": "Check weather data for optimal timing",
-                "safety_rating": "3 - Moderate",
-                "cultural_highlights": "See country information for cultural context"
-            }
-            
-    except json.JSONDecodeError:
-        logger.warning("Failed to parse JSON from Bedrock response, using fallback")
-        return {
-            "summary": response_text[:200] + "..." if len(response_text) > 200 else response_text,
-            "insights": ["Analysis completed successfully"],
-            "travel_tips": ["Review the full analysis for detailed recommendations"],
-            "best_visit_time": "Check weather data for optimal timing",
-            "safety_rating": "3 - Moderate",
-            "cultural_highlights": "See country information for cultural context"
-        }
+        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", response_text.strip(), flags=re.IGNORECASE|re.MULTILINE)
+        # Remove trailing commas in objects/arrays
+        cleaned = re.sub(r",(\s*[}\]])", r"\1", cleaned)
+        # Normalize smart quotes
+        cleaned = cleaned.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
+
+        start_idx = cleaned.find('{')
+        end_idx = cleaned.rfind('}') + 1
+        if start_idx != -1 and end_idx > start_idx:
+            json_str = cleaned[start_idx:end_idx]
+            return json.loads(json_str)
+    except Exception:
+        pass
+
+    return {
+        "summary": response_text[:200] + "..." if len(response_text) > 200 else response_text,
+        "insights": ["Analysis completed successfully"],
+        "travel_tips": ["Review the full analysis for detailed recommendations"],
+        "best_visit_time": "Check weather data for optimal timing",
+        "safety_rating": "3 - Moderate",
+        "cultural_highlights": "See country information for cultural context",
+        "travel_advisory": {"level": "Exercise normal precautions", "summary": "Travel advisory information unavailable", "recommendations": []}
+    }
 
 def generate_recommendations(analysis_data, travel_analysis):
     """
@@ -315,12 +315,16 @@ def generate_recommendations(analysis_data, travel_analysis):
             primary_language = list(languages.keys())[0] if languages else "English"
             recommendations["cultural_notes"].append(f"Primary language: {primary_language}")
     
-    # Travel advisory recommendations
-    travel_advisory = analysis_data.get('travel_advisory', {})
+    # Travel advisory recommendations from Bedrock analysis
+    travel_advisory = travel_analysis.get('travel_advisory', {})
     if travel_advisory:
         level = travel_advisory.get('level', '')
-        if level in ['Exercise increased caution', 'Reconsider travel', 'Do not travel']:
+        if any(keyword in level.lower() for keyword in ['increased caution', 'reconsider travel', 'do not travel']):
             recommendations["safety_advice"].append(f"Travel advisory level: {level}")
+        
+        advisory_recommendations = travel_advisory.get('recommendations', [])
+        if advisory_recommendations:
+            recommendations["safety_advice"].extend(advisory_recommendations[:2])  # Add first 2 recommendations
     
     # Timing recommendations from analysis
     if travel_analysis.get('best_visit_time'):

@@ -26,6 +26,51 @@ GOOGLE_WEATHER_URL = "https://weather.googleapis.com/v1/currentConditions:lookup
 RESTCOUNTRIES_BASE_URL = "https://restcountries.com/v3.1"
 SMART_TRAVELLER_BASE_URL = "https://smartraveller.kevle.xyz/api/"
 
+# near other config
+GEOCODE_API_KEY = os.getenv("GEOCODE_API_KEY")
+
+def geocode_city_country(query: str) -> Dict[str, Optional[str]]:
+    try:
+        base_url = "https://geocode.maps.co/search"
+        params = {"q": query, "format": "json", "addressdetails": 1, "limit": 1}
+        if GEOCODE_API_KEY:
+            params["api_key"] = GEOCODE_API_KEY
+        response = requests.get(
+            base_url,
+            params=params,
+            timeout=15,
+            headers={"User-Agent": "LambdaTrip/1.0 (contact@example.com)"}
+        )
+        response.raise_for_status()
+        results = response.json() or []
+        if not results:
+            return {"city": None, "country": None}
+
+        top = results[0]
+        address = top.get("address", {}) or {}
+        city = (
+            address.get("city") or address.get("town") or address.get("village")
+            or address.get("hamlet") or address.get("municipality")
+            or address.get("suburb") or address.get("county")
+        )
+        country = address.get("country")
+        country_code = (address.get("country_code") or "").upper() or None
+
+        if (not city or not country) and top.get("display_name"):
+            parts = [p.strip() for p in top["display_name"].split(",") if p.strip()]
+            if parts:
+                country = country or parts[-1]
+                if not city and len(parts) >= 3:
+                    city = parts[-4] if len(parts) >= 4 else parts[-3]
+
+        return {"city": city, "country": country, "country_code": country_code}
+    except requests.RequestException:
+        logger.warning(f"Geocoding request failed for '{query}'")
+        return {"city": None, "country": None, "country_code": None}
+    except Exception:
+        logger.error(f"Unexpected error during geocoding for '{query}'")
+        return {"city": None, "country": None, "country_code": None}
+
 def get_weather(city: str, country: str) -> Optional[Dict[str, Any]]:
     """
     Get weather information for a city using Google Weather API
@@ -183,13 +228,13 @@ def get_country_info(country_name: str) -> Optional[Dict[str, Any]]:
         logger.error(f"Unexpected error in country API: {str(e)}")
         return None
 
-def get_travel_advisory(country_name: str) -> Optional[Dict[str, Any]]:
+def get_travel_advisory(country_name: str, country_code: str) -> Optional[Dict[str, Any]]:
     """
     Get travel advisory information using Smart Traveller API
     """
     try:
         # Map country names to Smart Traveller country codes
-        country_code = map_country_to_smart_traveller_code(country_name)
+        country_code = country_code if country_code else map_country_to_smart_traveller_code(country_name)
         if not country_code:
             logger.warning(f"No Smart Traveller code found for {country_name}")
             return None

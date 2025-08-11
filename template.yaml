@@ -13,6 +13,7 @@ Globals:
         GOOGLE_VISION_API_KEY: !Ref GoogleVisionApiKey
         GOOGLE_WEATHER_API_KEY: !Ref GoogleWeatherApiKey
         GOOGLE_GEOCODING_API_KEY: !Ref GoogleGeocodingApiKey
+        GEOCODE_API_KEY: !Ref GeocodeApiKey
         ENVIRONMENT: local
         BEDROCK_MODEL_ID: !Ref BedrockModelId
 
@@ -35,6 +36,11 @@ Parameters:
   GoogleGeocodingApiKey:
     Type: String
     Description: Google Geocoding API Key
+    NoEcho: true
+
+  GeocodeApiKey:
+    Type: String
+    Description: Geocode.maps.co API Key for landmark geocoding
     NoEcho: true
 
 Resources:

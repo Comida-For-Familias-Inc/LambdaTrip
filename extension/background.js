@@ -391,7 +391,7 @@ async function analyzeLandmarkImage(imageUrl) {
       throw new Error(`Image analysis failed: ${imageResponse.status}`);
     }
 
-    const imageData = await imageResponse.json();
+    const imageData = await imageResponse.json();  
     console.log('[background] First API response data:', imageData);
     
     // Second API call to get landmark analysis
@@ -402,7 +402,7 @@ async function analyzeLandmarkImage(imageUrl) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        analysis_data: imageData
+        analysis_data: imageData.analysis_data
       })
     });
 
