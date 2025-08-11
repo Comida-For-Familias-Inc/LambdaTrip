@@ -6,7 +6,6 @@ let isAnalyzing = false;
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  chrome.runtime.sendMessage({ type: 'log', message: 'Content script received message: ' + JSON.stringify(request) });
   if (request.action === 'analyzeImage_click') {
     showAnalysisModal(request.imageUrl, request.usageInfo);
     sendResponse({ ack: true }); // immediate ack
@@ -15,11 +14,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   sendResponse({ ack: true });
 });
 
-// Log when content script is fully ready
-chrome.runtime.sendMessage({ type: 'log', message: '[LambdaTrip] Content script ready and listening for messages' });
-
 function showAnalysisModal(imageUrl, usageInfo) {
-  chrome.runtime.sendMessage({ type: 'log', message: 'showAnalysisModal called with: ' + imageUrl + ', ' + JSON.stringify(usageInfo) });
   if (isAnalyzing) return;
   
   isAnalyzing = true;
@@ -39,33 +34,25 @@ function showAnalysisModal(imageUrl, usageInfo) {
   
   // Call background script to analyze image
   try {
-    chrome.runtime.sendMessage({ type: 'log', message: 'Sending message to background script...' });
     chrome.runtime.sendMessage({
       action: 'analyzeImage_content',
       imageUrl: imageUrl
     }, (response) => {
-      chrome.runtime.sendMessage({ type: 'log', message: 'Received response from background script: ' + JSON.stringify(response) });
-      chrome.runtime.sendMessage({ type: 'log', message: 'Response type: ' + typeof response });
-      chrome.runtime.sendMessage({ type: 'log', message: 'Response keys: ' + (response ? Object.keys(response) : 'null/undefined') });
       isAnalyzing = false;
       
       if (chrome.runtime.lastError) {
-        chrome.runtime.sendMessage({ type: 'log', message: 'Extension error: ' + JSON.stringify(chrome.runtime.lastError) });
         showErrorState('Extension communication error. Please try again.');
         return;
       }
       
       if (response && response.success) {
-        chrome.runtime.sendMessage({ type: 'log', message: 'Response data: ' + JSON.stringify(response.data) });
         showAnalysisResults(response.data, imageUrl);
       } else {
-        chrome.runtime.sendMessage({ type: 'log', message: 'Analysis failed: ' + JSON.stringify(response) });
         showErrorState(response ? response.error : 'Unknown error occurred');
       }
     });
   } catch (error) {
     isAnalyzing = false;
-    chrome.runtime.sendMessage({ type: 'log', message: 'Error sending message: ' + error.toString() });
     showErrorState('Failed to communicate with extension. Please try again.');
   }
 }
@@ -107,7 +94,6 @@ function createModal() {
 }
 
 function showLoadingState(imageUrl) {
-  chrome.runtime.sendMessage({ type: 'log', message: 'showLoadingState called with imageUrl: ' + imageUrl });
   const modalContent = document.getElementById('lambdatrip-modal-content');
   
   modalContent.innerHTML = `
@@ -131,16 +117,9 @@ function showLoadingState(imageUrl) {
 }
 
 function showAnalysisResults(data, imageUrl) {
-  chrome.runtime.sendMessage({ type: 'log', message: 'showAnalysisResults called with data: ' + JSON.stringify(data) });
-  chrome.runtime.sendMessage({ type: 'log', message: 'showAnalysisResults called with imageUrl: ' + imageUrl });
-  
   const modalContent = document.getElementById('lambdatrip-modal-content');
-  chrome.runtime.sendMessage({ type: 'log', message: 'modalContent element: ' + (modalContent ? 'found' : 'not found') });
   
   const { imageAnalysis, aiAnalysis } = data;
-  chrome.runtime.sendMessage({ type: 'log', message: 'imageAnalysis: ' + JSON.stringify(imageAnalysis) });
-  chrome.runtime.sendMessage({ type: 'log', message: 'aiAnalysis: ' + JSON.stringify(aiAnalysis) });
-  
   // Extract landmark data from the correct structure
   const landmarkData = imageAnalysis.analysis_data?.landmark || {};
   const landmarkName = imageAnalysis.landmark_detected || landmarkData.name || 'Not detected';
@@ -290,13 +269,6 @@ function showAnalysisResults(data, imageUrl) {
   analyzedImageWrapper.appendChild(analyzedImg);
 
   modal.classList.add('lambdatrip-active');
-  chrome.runtime.sendMessage({ type: 'log', message: 'Modal activated with lambdatrip-active class' });
-  chrome.runtime.sendMessage({ type: 'log', message: 'Modal classes: ' + modal.className });
-  chrome.runtime.sendMessage({ type: 'log', message: 'Modal style right: ' + window.getComputedStyle(modal).right });
-  chrome.runtime.sendMessage({ type: 'log', message: 'Modal style width: ' + window.getComputedStyle(modal).width });
-  chrome.runtime.sendMessage({ type: 'log', message: 'Modal style height: ' + window.getComputedStyle(modal).height });
-  chrome.runtime.sendMessage({ type: 'log', message: 'Modal style z-index: ' + window.getComputedStyle(modal).zIndex });
-  chrome.runtime.sendMessage({ type: 'log', message: 'Modal style position: ' + window.getComputedStyle(modal).position });
 }
 
 function showErrorState(errorMessage) {

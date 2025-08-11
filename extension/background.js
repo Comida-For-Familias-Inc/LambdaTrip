@@ -10,7 +10,6 @@ const USAGE_WARNING_THRESHOLD = 0.8; // Show warning at 80% of limit
 
 // Create context menu on extension install
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[background] Extension installed/updated, creating context menu');
   
   chrome.contextMenus.create({
     id: 'analyzeLandmark',
@@ -27,7 +26,6 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Also create context menu on startup (in case onInstalled doesn't fire)
 chrome.runtime.onStartup.addListener(() => {
-  console.log('[background] Extension started, ensuring context menu exists');
   
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
@@ -46,12 +44,8 @@ chrome.runtime.onStartup.addListener(() => {
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  console.log('[background] Context menu clicked:', info.menuItemId);
-  console.log('[background] Tab info:', tab);
-  console.log('[background] Image URL:', info.srcUrl);
   
   if (info.menuItemId === 'analyzeLandmark') {
-    console.log('[background] Processing analyzeLandmark request');
     
     // Check if tab is still valid
     if (!tab || !tab.id) {
@@ -61,10 +55,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     
     // Proceed directly with usage check and analysis
     checkUsageLimit().then((usageInfo) => {
-      console.log('[background] Usage info:', usageInfo);
       
       if (usageInfo.canProceed) {
-        console.log('[background] Sending analyzeImage message to tab:', tab.id);
         sendMessageWithInjection(tab.id, {
           action: 'analyzeImage_click',
           imageUrl: info.srcUrl,
@@ -109,7 +101,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 // Firebase Auth functions
 async function getAuthFromOffscreen() {
-  console.log('[background] getAuthFromOffscreen called');
   return new Promise(async (resolve, reject) => {
     try {
       // Use the new check here
@@ -129,7 +120,7 @@ async function getAuthFromOffscreen() {
         target: 'offscreen',
         type: 'firebase-signin-bg'
       }).then(response => {
-        console.log('[background] Received response from offscreen for firebase-signin:', response);
+        console.log('[background] Received response   from offscreen for firebase-signin:', response);
         if (response && response.user) {
           resolve(response.user);
         } else {
@@ -187,7 +178,6 @@ async function checkFirestoreSubscriptionDirect(userId) {
           reasons: ['IFRAME_SCRIPTING'],
           justification: 'Firebase Firestore requires an offscreen document'
         });
-        console.log('[background] Offscreen document created for Firestore subscription check');
       } else {
         console.log('[background] Offscreen document already exists for Firestore subscription check');
       }
@@ -210,7 +200,6 @@ async function checkFirestoreSubscriptionDirect(userId) {
 
 // Handle messages from content script and popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('[background] Received message:', request);
   
   // Handle content script logs
   if (request.type === 'log') {
@@ -232,15 +221,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     analyzeLandmarkImage(request.imageUrl)
       .then(result => {
         console.log('[background] API call successful, sending response to content script');
-        console.log('[background] Response data:', result);
         sendResponse({ success: true, data: result });
-        console.log('[background] Response sent successfully');
       })
       .catch(error => {
         console.error('[background] API call failed:', error);
-        console.log('[background] Sending error response to content script');
         sendResponse({ success: false, error: error.message });
-        console.log('[background] Error response sent successfully');
       });
     
     // Return true to indicate we will send a response asynchronously
@@ -248,14 +233,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   // Firebase Auth handlers
   if (request.type === 'firebase-signin-popup') {
-    console.log('[background] Received firebase-signin request');
     getAuthFromOffscreen()
       .then(user => {
-        console.log('[background] getAuthFromOffscreen result:', user);
         if (user && user.uid) {
           // Store user data in Chrome storage
           chrome.storage.local.set({user: user}, () => {
-            console.log('[background] User stored in chrome.storage.local:', user);
             sendResponse({success: true, user: user});
             // Broadcast auth state changed
             chrome.runtime.sendMessage({ type: 'auth-state-changed', user: user });
@@ -273,7 +255,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'firebase-signout-popup') {
-    console.log('[background] Received firebase-signout request');
     // First, call Firebase Auth signOut via offscreen document
     chrome.runtime.sendMessage({
       target: 'offscreen',
@@ -281,7 +262,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }).then(() => {
       // Then remove user data from Chrome storage
       chrome.storage.local.remove(['user', 'lastSubscriptionCheck'], () => {
-        console.log('[background] User removed from chrome.storage.local');
         sendResponse({success: true});
         // Broadcast auth state changed
         chrome.runtime.sendMessage({ type: 'auth-state-changed', user: null });
@@ -298,7 +278,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'firebase-auth-state-popup') {
-    console.log('[background] Received firebase-auth-state request');
     checkAuthStateFromStorage()
       .then(result => {
         sendResponse(result);
@@ -370,10 +349,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // API call function
 async function analyzeLandmarkImage(imageUrl) {
   try {
-    console.log('[background] Starting analyzeLandmarkImage for:', imageUrl);
     
     // First API call to analyze the image
-    console.log('[background] Making first API call to /analyze-image');
     const imageResponse = await fetch(`${API_BASE_URL}/analyze-image`, {
       method: 'POST',
       headers: {
@@ -384,18 +361,13 @@ async function analyzeLandmarkImage(imageUrl) {
       })
     });
 
-    console.log('[background] First API response status:', imageResponse.status);
-    console.log('[background] First API response ok:', imageResponse.ok);
-
     if (!imageResponse.ok) {
       throw new Error(`Image analysis failed: ${imageResponse.status}`);
     }
 
     const imageData = await imageResponse.json();  
-    console.log('[background] First API response data:', imageData);
     
     // Second API call to get landmark analysis
-    console.log('[background] Making second API call to /analyze-landmark');
     const landmarkResponse = await fetch(`${API_BASE_URL}/analyze-landmark`, {
       method: 'POST',
       headers: {
@@ -406,22 +378,15 @@ async function analyzeLandmarkImage(imageUrl) {
       })
     });
 
-    console.log('[background] Second API response status:', landmarkResponse.status);
-    console.log('[background] Second API response ok:', landmarkResponse.ok);
-
     if (!landmarkResponse.ok) {
       throw new Error(`Landmark analysis failed: ${landmarkResponse.status}`);
     }
 
     const landmarkData = await landmarkResponse.json();
-    console.log('[background] Second API response data:', landmarkData);
     
     // Increment usage count
-    console.log('[background] Incrementing usage count');
     await incrementUsage();
 
-    console.log('[background] analyzeLandmarkImage completed successfully');
-    
     // Return data in the structure expected by content script
     return {
       imageAnalysis: {
@@ -435,7 +400,6 @@ async function analyzeLandmarkImage(imageUrl) {
     };
   } catch (error) {
     console.error('[background] Image analysis error:', error);
-    console.error('[background] Error stack:', error.stack);
     throw error;
   }
 } 
